@@ -1,5 +1,19 @@
 # DSH Skill Manager
 
+DSH delegates plugin installation to `pnpm`. Enable the tested pnpm version
+once with the Corepack bundled with Node.js:
+
+```bash
+corepack enable pnpm
+corepack prepare pnpm@11.7.0 --activate
+```
+
+Verify that your shell can find it:
+
+```bash
+pnpm --version
+```
+
 Install the public `v0.1.0` release into the DSH Web profile:
 
 ```bash
@@ -24,6 +38,10 @@ Skills.sh skills and safely managing the local copies that the plugin owns.
 
 Search works through the DSH Host. Filesystem mutations are intentionally
 disabled for non-loopback browsers.
+
+If DSH reports `pnpm not found on PATH`, run the Corepack setup above and
+retry the same installation command. If the shell still uses an old command
+cache, open a new terminal before retrying.
 
 ## Features
 
