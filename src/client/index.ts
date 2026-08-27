@@ -1,6 +1,7 @@
 import { createElement as h } from 'react'
 import { SkillManagerSection } from './SkillManagerSection.ts'
 import { en, zh, type Translate } from './locales.ts'
+import { searchCatalog } from './search-api.ts'
 
 const namespace = 'dsh-skill-manager'
 
@@ -50,5 +51,5 @@ export function apply(ctx: SkillManagerClientContext): void {
     label: () => t('nav'),
     locale: namespace,
     inject: () => ({ t }),
-  }, () => h(SkillManagerSection, { t })))
+  }, () => h(SkillManagerSection, { t, search: searchCatalog })))
 }
