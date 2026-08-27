@@ -14,13 +14,33 @@ function submit(query: string): void {
   fireEvent.click(screen.getByRole('button', { name: en.searchAction }))
 }
 
+function renderManager(
+  search: (
+    query: string,
+    signal: AbortSignal,
+  ) => Promise<readonly CatalogSkill[]>,
+): void {
+  const prepareInstall = async (): Promise<never> => {
+    throw new Error('not called')
+  }
+  const confirmInstall = async (): Promise<never> => {
+    throw new Error('not called')
+  }
+  render(h(SkillManagerSection, {
+    t,
+    search,
+    prepareInstall,
+    confirmInstall,
+  }))
+}
+
 describe('Skill Manager search', () => {
   it('shows loading and then a complete search result', async () => {
     let resolveSearch: ((results: readonly CatalogSkill[]) => void) | undefined
     const search = vi.fn(() => new Promise<readonly CatalogSkill[]>(resolve => {
       resolveSearch = resolve
     }))
-    render(h(SkillManagerSection, { t, search }))
+    renderManager(search)
 
     submit('react')
     expect(screen.getByRole('status').textContent).toBe(en.searching)
@@ -43,7 +63,7 @@ describe('Skill Manager search', () => {
 
   it('shows an explicit empty state', async () => {
     const search = vi.fn(async () => [])
-    render(h(SkillManagerSection, { t, search }))
+    renderManager(search)
 
     submit('nothing')
     expect(await screen.findByText(en.empty)).toBeTruthy()
@@ -53,7 +73,7 @@ describe('Skill Manager search', () => {
     const search = vi.fn()
       .mockRejectedValueOnce(new Error('Skills.sh is unavailable.'))
       .mockResolvedValueOnce([])
-    render(h(SkillManagerSection, { t, search }))
+    renderManager(search)
 
     submit('react')
     expect((await screen.findByRole('alert')).textContent).toBe('Skills.sh is unavailable.')
@@ -69,7 +89,7 @@ describe('Skill Manager search', () => {
       signals.push(signal)
       return new Promise<never[]>(() => undefined)
     })
-    render(h(SkillManagerSection, { t, search }))
+    renderManager(search)
 
     submit('first')
     fireEvent.change(screen.getByLabelText(en.searchLabel), { target: { value: 'second' } })

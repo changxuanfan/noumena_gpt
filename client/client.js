@@ -9,12 +9,17 @@ window.__ModuleLoader__.load({
 		function formatInstalls(installs) {
 			return new Intl.NumberFormat().format(installs);
 		}
-		function SkillManagerSection({ t, search }) {
+		function SkillManagerSection({ t, search, prepareInstall, confirmInstall }) {
 			const [query, setQuery] = (0, react.useState)("");
 			const [submittedQuery, setSubmittedQuery] = (0, react.useState)("");
 			const [state, setState] = (0, react.useState)({ status: "idle" });
+			const [installState, setInstallState] = (0, react.useState)({ status: "idle" });
 			const activeRequest = (0, react.useRef)(null);
-			(0, react.useEffect)(() => () => activeRequest.current?.abort(), []);
+			const activePreparation = (0, react.useRef)(null);
+			(0, react.useEffect)(() => () => {
+				activeRequest.current?.abort();
+				activePreparation.current?.abort();
+			}, []);
 			const runSearch = async (nextQuery) => {
 				const normalizedQuery = nextQuery.trim();
 				if (normalizedQuery.length === 0) return;
@@ -41,6 +46,43 @@ window.__ModuleLoader__.load({
 				event.preventDefault();
 				runSearch(query);
 			};
+			const beginInstall = async (skill) => {
+				activePreparation.current?.abort();
+				const controller = new AbortController();
+				activePreparation.current = controller;
+				setInstallState({ status: "preparing" });
+				try {
+					const prepared = await prepareInstall(skill.id, controller.signal);
+					if (activePreparation.current === controller) setInstallState({
+						status: "confirming",
+						prepared
+					});
+				} catch (error) {
+					if (controller.signal.aborted || activePreparation.current !== controller) return;
+					setInstallState({
+						status: "error",
+						message: error instanceof Error ? error.message : t("genericError")
+					});
+				}
+			};
+			const finishInstall = async (prepared) => {
+				setInstallState({
+					status: "installing",
+					prepared
+				});
+				try {
+					const skill = await confirmInstall(prepared.operationId, prepared.collision === "managed");
+					setInstallState({
+						status: "success",
+						skill
+					});
+				} catch (error) {
+					setInstallState({
+						status: "error",
+						message: error instanceof Error ? error.message : t("genericError")
+					});
+				}
+			};
 			return (0, react.createElement)("section", { "aria-labelledby": "dsh-skill-manager-title" }, (0, react.createElement)("h2", { id: "dsh-skill-manager-title" }, t("title")), (0, react.createElement)("p", null, t("introduction")), (0, react.createElement)("form", { onSubmit: submit }, (0, react.createElement)("label", { htmlFor: "dsh-skill-search" }, t("searchLabel")), (0, react.createElement)("input", {
 				id: "dsh-skill-search",
 				name: "query",
@@ -61,7 +103,27 @@ window.__ModuleLoader__.load({
 				href: skill.pageUrl,
 				target: "_blank",
 				rel: "noreferrer"
-			}, t("openPage")))))) : null);
+			}, t("openPage")), (0, react.createElement)("button", {
+				type: "button",
+				disabled: installState.status === "preparing" || installState.status === "installing",
+				onClick: () => void beginInstall(skill)
+			}, t("install")))))) : null, installState.status === "preparing" ? (0, react.createElement)("p", {
+				role: "status",
+				"aria-live": "polite"
+			}, t("preparingInstall")) : null, installState.status === "confirming" ? (0, react.createElement)("div", {
+				role: "dialog",
+				"aria-modal": "true",
+				"aria-labelledby": "dsh-skill-install-confirmation"
+			}, (0, react.createElement)("h3", { id: "dsh-skill-install-confirmation" }, t("confirmInstallTitle")), (0, react.createElement)("strong", null, installState.prepared.name), (0, react.createElement)("p", null, installState.prepared.description), (0, react.createElement)("p", null, installState.prepared.source), (0, react.createElement)("p", null, installState.prepared.collision === "managed" ? t("overwritePrompt") : t("installPrompt")), (0, react.createElement)("button", {
+				type: "button",
+				onClick: () => setInstallState({ status: "idle" })
+			}, t("cancel")), (0, react.createElement)("button", {
+				type: "button",
+				onClick: () => void finishInstall(installState.prepared)
+			}, installState.prepared.collision === "managed" ? t("confirmOverwrite") : t("confirmInstall"))) : null, installState.status === "installing" ? (0, react.createElement)("p", {
+				role: "status",
+				"aria-live": "polite"
+			}, t("installing")) : null, installState.status === "success" ? (0, react.createElement)("p", { role: "status" }, `${t("installed")} ${installState.skill.name}`) : null, installState.status === "error" ? (0, react.createElement)("p", { role: "alert" }, installState.message) : null);
 		}
 		//#endregion
 		//#region src/client/locales.ts
@@ -77,6 +139,16 @@ window.__ModuleLoader__.load({
 			descriptionUnavailable: "No description is currently available.",
 			installs: "installs",
 			openPage: "Open on Skills.sh",
+			install: "Install",
+			preparingInstall: "Preparing installation...",
+			confirmInstallTitle: "Confirm skill installation",
+			confirmInstall: "Install skill",
+			confirmOverwrite: "Overwrite and reinstall",
+			installPrompt: "Install this validated skill into the DSH Skills Root?",
+			overwritePrompt: "This Managed Skill already exists. Reinstalling will overwrite its current files.",
+			cancel: "Cancel",
+			installing: "Installing skill...",
+			installed: "Skill installed successfully.",
 			retry: "Retry",
 			genericError: "The search failed. Try again."
 		};
@@ -92,6 +164,16 @@ window.__ModuleLoader__.load({
 			descriptionUnavailable: "暂时无法获取技能简介。",
 			installs: "次安装",
 			openPage: "在 Skills.sh 上查看",
+			install: "安装",
+			preparingInstall: "正在准备安装……",
+			confirmInstallTitle: "确认安装技能",
+			confirmInstall: "安装技能",
+			confirmOverwrite: "覆盖并重新安装",
+			installPrompt: "将这个已经验证的技能安装到 DSH 技能目录吗？",
+			overwritePrompt: "这个托管技能已经存在，重新安装会覆盖其当前文件。",
+			cancel: "取消",
+			installing: "正在安装技能……",
+			installed: "技能安装成功。",
 			retry: "重试",
 			genericError: "搜索失败，请重试。"
 		};
@@ -107,7 +189,39 @@ window.__ModuleLoader__.load({
 		function isSearchEnvelope(value) {
 			if (!isRecord(value) || typeof value.ok !== "boolean") return false;
 			if (value.ok) return Array.isArray(value.results) && value.results.every(isCatalogSkill);
-			return isRecord(value.error) && typeof value.error.code === "string" && typeof value.error.message === "string";
+			return isRecord(value.error) && isSearchErrorCode(value.error.code) && typeof value.error.message === "string";
+		}
+		function isSearchErrorCode(value) {
+			return value === "invalid-query" || value === "network" || value === "timeout" || value === "upstream" || value === "invalid-response";
+		}
+		function isPublicError(value) {
+			return isRecord(value) && typeof value.code === "string" && typeof value.message === "string";
+		}
+		function isPreparedInstall(value) {
+			if (!isRecord(value)) return false;
+			return typeof value.operationId === "string" && typeof value.name === "string" && typeof value.description === "string" && typeof value.source === "string" && typeof value.pageUrl === "string" && (value.collision === "none" || value.collision === "managed") && typeof value.expiresAt === "string";
+		}
+		function isManagedSkill(value) {
+			if (!isRecord(value)) return false;
+			return [
+				"name",
+				"description",
+				"catalogId",
+				"source",
+				"pageUrl",
+				"remoteHash",
+				"localHash",
+				"installedAt",
+				"updatedAt"
+			].every((key) => typeof value[key] === "string");
+		}
+		function isPrepareInstallEnvelope(value) {
+			if (!isRecord(value) || typeof value.ok !== "boolean") return false;
+			return value.ok ? isPreparedInstall(value.prepared) : isPublicError(value.error);
+		}
+		function isConfirmInstallEnvelope(value) {
+			if (!isRecord(value) || typeof value.ok !== "boolean") return false;
+			return value.ok ? isManagedSkill(value.skill) : isPublicError(value.error);
 		}
 		//#endregion
 		//#region src/client/search-api.ts
@@ -143,6 +257,53 @@ window.__ModuleLoader__.load({
 			return body.results;
 		}
 		//#endregion
+		//#region src/client/install-api.ts
+		var InstallApiError = class extends Error {
+			code;
+			constructor(code, message) {
+				super(message);
+				this.code = code;
+				this.name = "InstallApiError";
+			}
+		};
+		async function postJson(path, body, signal) {
+			let response;
+			try {
+				response = await fetch(path, {
+					method: "POST",
+					headers: {
+						accept: "application/json",
+						"content-type": "application/json"
+					},
+					body: JSON.stringify(body),
+					signal
+				});
+			} catch (error) {
+				if (signal?.aborted) throw error;
+				throw new InstallApiError("network", "Unable to reach the DSH host.");
+			}
+			try {
+				return await response.json();
+			} catch {
+				throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			}
+		}
+		async function prepareInstall(id, signal) {
+			const body = await postJson("/dsh-skill-manager/api/install/prepare", { id }, signal);
+			if (!isPrepareInstallEnvelope(body)) throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			if (!body.ok) throw new InstallApiError(body.error.code, body.error.message);
+			return body.prepared;
+		}
+		async function confirmInstall(operationId, overwrite) {
+			const body = await postJson("/dsh-skill-manager/api/install/confirm", {
+				operationId,
+				overwrite
+			});
+			if (!isConfirmInstallEnvelope(body)) throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			if (!body.ok) throw new InstallApiError(body.error.code, body.error.message);
+			return body.skill;
+		}
+		//#endregion
 		//#region src/client/index.ts
 		const namespace = "dsh-skill-manager";
 		const name = namespace;
@@ -162,7 +323,9 @@ window.__ModuleLoader__.load({
 				inject: () => ({ t })
 			}, () => (0, react.createElement)(SkillManagerSection, {
 				t,
-				search: searchCatalog
+				search: searchCatalog,
+				prepareInstall,
+				confirmInstall
 			})));
 		}
 		//#endregion
