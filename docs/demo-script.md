@@ -7,8 +7,7 @@ Target length: 3 to 6 minutes.
 1. Use a clean `DSH_HOME` and DSH `0.1.1-rc.2`.
 2. Confirm `pnpm` is available to the DSH launcher.
 3. Keep the repository Actions, Issues, and pull requests open in separate tabs.
-4. Use the current `#main` installation command from the README. The final
-   release pass changes this to the verified `v0.1.0` tag.
+4. Use the `v0.1.0` installation command from the README.
 
 ## Recording sequence
 
