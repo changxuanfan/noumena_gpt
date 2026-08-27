@@ -9,6 +9,7 @@ import {
 import { dirname, join } from 'node:path'
 import {
   readManifest,
+  managedRecordsEqual,
   writeManifestAtomic,
   type ManagedSkillRecord,
   type SkillManifest,
@@ -27,6 +28,7 @@ import {
   type ValidatedSnapshot,
 } from './snapshot.ts'
 import type { UpdateCheckDocument } from '../contracts.ts'
+import { MutationLock } from './mutation-lock.ts'
 
 const DEFAULT_OPERATION_TTL_MS = 5 * 60 * 1000
 const MAX_PREPARED_OPERATIONS = 64
@@ -90,6 +92,7 @@ export interface InstallServiceOptions {
   readonly maxPendingOperations?: number
   readonly warn?: (message: string, error: unknown) => void
   readonly writeManifest?: typeof writeManifestAtomic
+  readonly mutationLock?: MutationLock
 }
 
 export class InstallService {
@@ -100,10 +103,10 @@ export class InstallService {
   private readonly maxPendingOperations: number
   private readonly warn: (message: string, error: unknown) => void
   private readonly writeManifest: typeof writeManifestAtomic
+  private readonly mutationLock: MutationLock
   private readonly operations = new Map<string, PreparedRecord>()
   private inFlightPreparations = 0
   private activeCommits = 0
-  private writeTail: Promise<void> = Promise.resolve()
 
   constructor(options: InstallServiceOptions) {
     this.skillsRoot = options.skillsRoot
@@ -113,6 +116,7 @@ export class InstallService {
     this.maxPendingOperations = options.maxPendingOperations ?? MAX_PREPARED_OPERATIONS
     this.warn = options.warn ?? ((message, error) => console.warn(message, error))
     this.writeManifest = options.writeManifest ?? writeManifestAtomic
+    this.mutationLock = options.mutationLock ?? new MutationLock()
   }
 
   async prepare(id: string, signal: AbortSignal): Promise<PreparedInstall> {
@@ -209,16 +213,10 @@ export class InstallService {
     }
 
     this.activeCommits += 1
-    return this.enqueue(async () => this.commitInstall(operation, input.overwrite))
+    return this.mutationLock.run(async () => this.commitInstall(operation, input.overwrite))
       .finally(() => {
         this.activeCommits -= 1
       })
-  }
-
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.writeTail.then(operation, operation)
-    this.writeTail = result.then(() => undefined, () => undefined)
-    return result
   }
 
   private pruneExpiredOperations(): void {
@@ -313,7 +311,7 @@ export class InstallService {
         ? manifest.skills[operation.snapshot.name]
         : undefined
       if (baselineRecord === undefined
-        || !sameManagedRecord(baselineRecord, operation.baseline.record)) {
+        || !managedRecordsEqual(baselineRecord, operation.baseline.record)) {
         throw new InstallError(
           'state-changed',
           'The Managed Skill changed after the update check. Check again.',
@@ -469,19 +467,4 @@ function hasStatus(error: unknown, status: number): boolean {
   return error instanceof Error
     && 'status' in error
     && error.status === status
-}
-
-function sameManagedRecord(
-  left: ManagedSkillRecord,
-  right: ManagedSkillRecord,
-): boolean {
-  return left.name === right.name
-    && left.description === right.description
-    && left.catalogId === right.catalogId
-    && left.source === right.source
-    && left.pageUrl === right.pageUrl
-    && left.remoteHash === right.remoteHash
-    && left.localHash === right.localHash
-    && left.installedAt === right.installedAt
-    && left.updatedAt === right.updatedAt
 }

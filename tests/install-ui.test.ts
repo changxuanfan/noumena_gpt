@@ -53,6 +53,8 @@ async function renderResult(
     listManagedSkills: async () => [],
     checkSkillUpdate: async () => { throw new Error('not called') },
     confirmSkillUpdate: async () => { throw new Error('not called') },
+    prepareSkillRemoval: async () => { throw new Error('not called') },
+    confirmSkillRemoval: async () => { throw new Error('not called') },
   }))
   fireEvent.change(screen.getByLabelText(en.searchLabel), { target: { value: 'safe' } })
   fireEvent.click(screen.getByRole('button', { name: en.searchAction }))

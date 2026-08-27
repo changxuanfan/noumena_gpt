@@ -9,7 +9,7 @@ window.__ModuleLoader__.load({
 		function formatInstalls(installs) {
 			return new Intl.NumberFormat().format(installs);
 		}
-		function SkillManagerSection({ t, search, prepareInstall, confirmInstall, listManagedSkills, checkSkillUpdate, confirmSkillUpdate }) {
+		function SkillManagerSection({ t, search, prepareInstall, confirmInstall, listManagedSkills, checkSkillUpdate, confirmSkillUpdate, prepareSkillRemoval, confirmSkillRemoval }) {
 			const [query, setQuery] = (0, react.useState)("");
 			const [submittedQuery, setSubmittedQuery] = (0, react.useState)("");
 			const [state, setState] = (0, react.useState)({ status: "idle" });
@@ -17,6 +17,7 @@ window.__ModuleLoader__.load({
 			const [inventoryVersion, setInventoryVersion] = (0, react.useState)(0);
 			const [inventoryState, setInventoryState] = (0, react.useState)({ status: "loading" });
 			const [updateState, setUpdateState] = (0, react.useState)({ status: "idle" });
+			const [removalState, setRemovalState] = (0, react.useState)({ status: "idle" });
 			const activeRequest = (0, react.useRef)(null);
 			const activePreparation = (0, react.useRef)(null);
 			(0, react.useEffect)(() => () => {
@@ -150,6 +151,43 @@ window.__ModuleLoader__.load({
 					});
 				}
 			};
+			const beginRemoval = async (name) => {
+				setRemovalState({
+					status: "preparing",
+					name
+				});
+				try {
+					const prepared = await prepareSkillRemoval(name);
+					setRemovalState({
+						status: "confirming",
+						prepared
+					});
+				} catch (error) {
+					setRemovalState({
+						status: "error",
+						message: error instanceof Error ? error.message : t("genericError")
+					});
+				}
+			};
+			const finishRemoval = async (prepared) => {
+				setRemovalState({
+					status: "removing",
+					prepared
+				});
+				try {
+					const name = await confirmSkillRemoval(prepared.operationId);
+					setRemovalState({
+						status: "success",
+						name
+					});
+					setInventoryVersion((version) => version + 1);
+				} catch (error) {
+					setRemovalState({
+						status: "error",
+						message: error instanceof Error ? error.message : t("genericError")
+					});
+				}
+			};
 			return (0, react.createElement)("section", { "aria-labelledby": "dsh-skill-manager-title" }, (0, react.createElement)("h2", { id: "dsh-skill-manager-title" }, t("title")), (0, react.createElement)("p", null, t("introduction")), (0, react.createElement)("form", { onSubmit: submit }, (0, react.createElement)("label", { htmlFor: "dsh-skill-search" }, t("searchLabel")), (0, react.createElement)("input", {
 				id: "dsh-skill-search",
 				name: "query",
@@ -201,7 +239,11 @@ window.__ModuleLoader__.load({
 				type: "button",
 				disabled: updateState.status === "checking" || updateState.status === "updating",
 				onClick: () => void checkUpdate(skill.name)
-			}, t("checkUpdate")))))) : null, updateState.status === "checking" ? (0, react.createElement)("p", { role: "status" }, `${t("checkingUpdate")} ${updateState.name}`) : null, updateState.status === "result" ? (0, react.createElement)("p", { role: "status" }, updateState.update.status === "current" ? t("upToDate") : updateState.update.status === "source-unavailable" ? t("sourceUnavailable") : updateState.update.status === "locally-modified" ? t("stateModified") : t("localInvalid")) : null, updateState.status === "confirming" ? (0, react.createElement)("div", {
+			}, t("checkUpdate")), (0, react.createElement)("button", {
+				type: "button",
+				disabled: removalState.status === "preparing" || removalState.status === "removing",
+				onClick: () => void beginRemoval(skill.name)
+			}, t("remove")))))) : null, updateState.status === "checking" ? (0, react.createElement)("p", { role: "status" }, `${t("checkingUpdate")} ${updateState.name}`) : null, updateState.status === "result" ? (0, react.createElement)("p", { role: "status" }, updateState.update.status === "current" ? t("upToDate") : updateState.update.status === "source-unavailable" ? t("sourceUnavailable") : updateState.update.status === "locally-modified" ? t("stateModified") : t("localInvalid")) : null, updateState.status === "confirming" ? (0, react.createElement)("div", {
 				role: "dialog",
 				"aria-modal": "true",
 				"aria-labelledby": "dsh-skill-update-confirmation"
@@ -211,7 +253,17 @@ window.__ModuleLoader__.load({
 			}, t("cancel")), (0, react.createElement)("button", {
 				type: "button",
 				onClick: () => void applyUpdate(updateState.update)
-			}, t("confirmUpdate"))) : null, updateState.status === "updating" ? (0, react.createElement)("p", { role: "status" }, t("updating")) : null, updateState.status === "success" ? (0, react.createElement)("p", { role: "status" }, `${t("updated")} ${updateState.name}`) : null, updateState.status === "error" ? (0, react.createElement)("p", { role: "alert" }, updateState.message) : null);
+			}, t("confirmUpdate"))) : null, updateState.status === "updating" ? (0, react.createElement)("p", { role: "status" }, t("updating")) : null, updateState.status === "success" ? (0, react.createElement)("p", { role: "status" }, `${t("updated")} ${updateState.name}`) : null, updateState.status === "error" ? (0, react.createElement)("p", { role: "alert" }, updateState.message) : null, removalState.status === "preparing" ? (0, react.createElement)("p", { role: "status" }, `${t("preparingRemoval")} ${removalState.name}`) : null, removalState.status === "confirming" ? (0, react.createElement)("div", {
+				role: "dialog",
+				"aria-modal": "true",
+				"aria-labelledby": "dsh-skill-removal-confirmation"
+			}, (0, react.createElement)("h3", { id: "dsh-skill-removal-confirmation" }, t("confirmRemovalTitle")), (0, react.createElement)("strong", null, removalState.prepared.name), (0, react.createElement)("p", null, removalState.prepared.state === "locally-modified" ? t("modifiedRemovePrompt") : removalState.prepared.state === "current" ? t("removePrompt") : t("invalidRemovePrompt")), (0, react.createElement)("button", {
+				type: "button",
+				onClick: () => setRemovalState({ status: "idle" })
+			}, t("cancel")), (0, react.createElement)("button", {
+				type: "button",
+				onClick: () => void finishRemoval(removalState.prepared)
+			}, t("confirmRemoval"))) : null, removalState.status === "removing" ? (0, react.createElement)("p", { role: "status" }, t("removing")) : null, removalState.status === "success" ? (0, react.createElement)("p", { role: "status" }, `${t("removed")} ${removalState.name}`) : null, removalState.status === "error" ? (0, react.createElement)("p", { role: "alert" }, removalState.message) : null);
 		}
 		//#endregion
 		//#region src/client/locales.ts
@@ -258,6 +310,15 @@ window.__ModuleLoader__.load({
 			repairUpdatePrompt: "The local skill is missing or invalid. Updating will restore it from Skills.sh.",
 			updating: "Updating skill...",
 			updated: "Skill updated successfully.",
+			remove: "Uninstall",
+			preparingRemoval: "Preparing removal...",
+			confirmRemovalTitle: "Confirm skill removal",
+			removePrompt: "Remove this Managed Skill from DSH?",
+			modifiedRemovePrompt: "This skill has local modifications. Uninstalling will permanently remove them.",
+			invalidRemovePrompt: "This skill is missing or invalid. Uninstalling will remove its remaining files and ownership record.",
+			confirmRemoval: "Uninstall skill",
+			removing: "Uninstalling skill...",
+			removed: "Skill uninstalled successfully.",
 			retry: "Retry",
 			genericError: "The search failed. Try again."
 		};
@@ -304,6 +365,15 @@ window.__ModuleLoader__.load({
 			repairUpdatePrompt: "本机技能缺失或无效，更新会从 Skills.sh 恢复。",
 			updating: "正在更新技能……",
 			updated: "技能更新成功。",
+			remove: "卸载",
+			preparingRemoval: "正在准备卸载……",
+			confirmRemovalTitle: "确认卸载技能",
+			removePrompt: "从 DSH 中卸载这个托管技能吗？",
+			modifiedRemovePrompt: "这个技能包含本机修改，卸载会永久删除这些修改。",
+			invalidRemovePrompt: "这个技能缺失或无效，卸载会删除残留文件和托管记录。",
+			confirmRemoval: "卸载技能",
+			removing: "正在卸载技能……",
+			removed: "技能卸载成功。",
 			retry: "重试",
 			genericError: "搜索失败，请重试。"
 		};
@@ -368,6 +438,18 @@ window.__ModuleLoader__.load({
 			if (!value.ok) return isPublicError(value.error);
 			if (!isRecord(value.update)) return false;
 			return typeof value.update.name === "string" && isUpdateStatus(value.update.status) && typeof value.update.updateAvailable === "boolean" && (value.update.operationId === void 0 || typeof value.update.operationId === "string") && (value.update.expiresAt === void 0 || typeof value.update.expiresAt === "string");
+		}
+		function isPreparedRemoval(value) {
+			if (!isRecord(value)) return false;
+			return typeof value.operationId === "string" && typeof value.name === "string" && typeof value.description === "string" && typeof value.source === "string" && (value.state === "current" || value.state === "locally-modified" || value.state === "missing" || value.state === "invalid") && typeof value.expiresAt === "string";
+		}
+		function isPrepareRemovalEnvelope(value) {
+			if (!isRecord(value) || typeof value.ok !== "boolean") return false;
+			return value.ok ? isPreparedRemoval(value.prepared) : isPublicError(value.error);
+		}
+		function isConfirmRemovalEnvelope(value) {
+			if (!isRecord(value) || typeof value.ok !== "boolean") return false;
+			return value.ok ? typeof value.name === "string" : isPublicError(value.error);
 		}
 		//#endregion
 		//#region src/client/search-api.ts
@@ -470,7 +552,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region src/client/update-api.ts
-		async function post(path, body) {
+		async function post$1(path, body) {
 			let response;
 			try {
 				response = await fetch(path, {
@@ -491,16 +573,50 @@ window.__ModuleLoader__.load({
 			}
 		}
 		async function checkSkillUpdate(name) {
-			const body = await post("/dsh-skill-manager/api/update/check", { name });
+			const body = await post$1("/dsh-skill-manager/api/update/check", { name });
 			if (!isUpdateCheckEnvelope(body)) throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
 			if (!body.ok) throw new InstallApiError(body.error.code, body.error.message);
 			return body.update;
 		}
 		async function confirmSkillUpdate(operationId) {
-			const body = await post("/dsh-skill-manager/api/update/confirm", { operationId });
+			const body = await post$1("/dsh-skill-manager/api/update/confirm", { operationId });
 			if (!isConfirmInstallEnvelope(body)) throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
 			if (!body.ok) throw new InstallApiError(body.error.code, body.error.message);
 			return body.skill;
+		}
+		//#endregion
+		//#region src/client/remove-api.ts
+		async function post(path, body) {
+			let response;
+			try {
+				response = await fetch(path, {
+					method: "POST",
+					headers: {
+						accept: "application/json",
+						"content-type": "application/json"
+					},
+					body: JSON.stringify(body)
+				});
+			} catch {
+				throw new InstallApiError("network", "Unable to reach the DSH host.");
+			}
+			try {
+				return await response.json();
+			} catch {
+				throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			}
+		}
+		async function prepareSkillRemoval(name) {
+			const body = await post("/dsh-skill-manager/api/remove/prepare", { name });
+			if (!isPrepareRemovalEnvelope(body)) throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			if (!body.ok) throw new InstallApiError(body.error.code, body.error.message);
+			return body.prepared;
+		}
+		async function confirmSkillRemoval(operationId) {
+			const body = await post("/dsh-skill-manager/api/remove/confirm", { operationId });
+			if (!isConfirmRemovalEnvelope(body)) throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			if (!body.ok) throw new InstallApiError(body.error.code, body.error.message);
+			return body.name;
 		}
 		//#endregion
 		//#region src/client/index.ts
@@ -527,7 +643,9 @@ window.__ModuleLoader__.load({
 				confirmInstall,
 				listManagedSkills,
 				checkSkillUpdate,
-				confirmSkillUpdate
+				confirmSkillUpdate,
+				prepareSkillRemoval,
+				confirmSkillRemoval
 			})));
 		}
 		//#endregion

@@ -4,7 +4,12 @@ import { join, relative } from 'node:path'
 import type { ManagedSkillInventoryItem } from '../contracts.ts'
 import { readManifest, type ManagedSkillRecord } from './manifest.ts'
 import { inspectManagerRoot, safeDirectChild } from './roots.ts'
-import { validateSnapshot, type SnapshotFile } from './snapshot.ts'
+import {
+  computeSnapshotHash,
+  SnapshotValidationError,
+  validateSnapshot,
+  type SnapshotFile,
+} from './snapshot.ts'
 
 const MAX_FILES = 500
 const MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -116,17 +121,33 @@ export async function inspectManagedSkill(
   record: ManagedSkillRecord,
 ): Promise<ManagedSkillInspection> {
   const target = safeDirectChild(skillsRoot, record.name)
+  return inspectSkillDirectory(target, record)
+}
+
+export async function inspectSkillDirectory(
+  target: string,
+  record: ManagedSkillRecord,
+): Promise<ManagedSkillInspection> {
   try {
     const stats = await lstat(target)
     if (!stats.isDirectory() || stats.isSymbolicLink()) return { state: 'invalid' }
     const physicalTarget = await realpath(target)
     const collection: CollectionState = { files: [], totalBytes: 0, entries: 0 }
     await collectFiles(physicalTarget, physicalTarget, '', collection, 0)
-    const snapshot = validateSnapshot({
-      hash: record.remoteHash,
-      files: collection.files,
-    })
-    if (snapshot.name !== record.name) return { state: 'invalid' }
+    const currentHash = computeSnapshotHash(collection.files)
+    let snapshot
+    try {
+      snapshot = validateSnapshot({
+        hash: record.remoteHash,
+        files: collection.files,
+      })
+    } catch (error) {
+      if (error instanceof SnapshotValidationError) {
+        return { state: 'invalid', currentHash }
+      }
+      throw error
+    }
+    if (snapshot.name !== record.name) return { state: 'invalid', currentHash }
     return {
       state: snapshot.localHash === record.localHash ? 'current' : 'locally-modified',
       currentHash: snapshot.localHash,
@@ -134,9 +155,6 @@ export async function inspectManagedSkill(
   } catch (error) {
     if (isNodeError(error) && error.code === 'ENOENT') return { state: 'missing' }
     if (error instanceof InvalidLocalSkillError) return { state: 'invalid' }
-    if (error instanceof Error && error.name === 'SnapshotValidationError') {
-      return { state: 'invalid' }
-    }
     throw error
   }
 }

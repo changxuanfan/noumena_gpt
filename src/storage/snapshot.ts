@@ -96,7 +96,7 @@ function metadataFromSkillMarkdown(markdown: string): {
   }
 }
 
-function snapshotHash(files: readonly Readonly<SnapshotFile>[]): string {
+export function computeSnapshotHash(files: readonly Readonly<SnapshotFile>[]): string {
   const canonical = [...files]
     .sort((left, right) => left.path.localeCompare(right.path))
     .map(file => [file.path, file.contents])
@@ -168,7 +168,7 @@ export function validateSnapshot(snapshot: SkillSnapshot): ValidatedSnapshot {
 
   return {
     remoteHash: snapshot.hash,
-    localHash: snapshotHash(files),
+    localHash: computeSnapshotHash(files),
     name: metadata.name,
     description: metadata.description,
     files: Object.freeze(files),

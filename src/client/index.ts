@@ -5,6 +5,7 @@ import { searchCatalog } from './search-api.ts'
 import { confirmInstall, prepareInstall } from './install-api.ts'
 import { listManagedSkills } from './inventory-api.ts'
 import { checkSkillUpdate, confirmSkillUpdate } from './update-api.ts'
+import { confirmSkillRemoval, prepareSkillRemoval } from './remove-api.ts'
 
 const namespace = 'dsh-skill-manager'
 
@@ -62,5 +63,7 @@ export function apply(ctx: SkillManagerClientContext): void {
     listManagedSkills,
     checkSkillUpdate,
     confirmSkillUpdate,
+    prepareSkillRemoval,
+    confirmSkillRemoval,
   })))
 }

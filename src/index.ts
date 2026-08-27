@@ -7,6 +7,8 @@ import { SkillsShClient } from './skills-sh/client.ts'
 import { InstallService } from './storage/install-service.ts'
 import { InventoryService } from './storage/inventory-service.ts'
 import { defaultSkillsRoot } from './storage/roots.ts'
+import { MutationLock } from './storage/mutation-lock.ts'
+import { RemovalService } from './storage/removal-service.ts'
 
 export const name = 'dsh-skill-manager'
 
@@ -57,14 +59,22 @@ export function apply(ctx: Context): void {
     host.effect(
       () => {
         const skillsSh = new SkillsShClient()
+        const mutationLock = new MutationLock()
+        const skillsRoot = defaultSkillsRoot()
         const installService = new InstallService({
-          skillsRoot: defaultSkillsRoot(),
+          skillsRoot,
           catalog: skillsSh,
+          mutationLock,
         })
-        const inventoryService = new InventoryService(defaultSkillsRoot())
+        const removalService = new RemovalService({ skillsRoot, mutationLock })
+        const inventoryService = new InventoryService(skillsRoot)
         const disposeHealth = mountHealthRoute(host.webServer)
         const disposeSearch = mountSearchRoute(host.webServer, skillsSh)
-        const disposeInstall = mountInstallRoutes(host.webServer, installService)
+        const disposeInstall = mountInstallRoutes(
+          host.webServer,
+          installService,
+          removalService,
+        )
         const disposeInventory = mountInventoryRoute(host.webServer, inventoryService)
         return () => {
           disposeInventory()

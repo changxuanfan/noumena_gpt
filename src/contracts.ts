@@ -27,6 +27,7 @@ export type LifecycleErrorCode =
   | 'unsafe-root'
   | 'not-managed'
   | 'state-changed'
+  | 'remove-failed'
 
 export type PublicErrorCode = SearchErrorCode | LifecycleErrorCode
 
@@ -92,6 +93,23 @@ export interface UpdateCheckDocument {
 
 export type UpdateCheckEnvelope =
   | { readonly ok: true; readonly update: UpdateCheckDocument }
+  | { readonly ok: false; readonly error: PublicError }
+
+export interface PreparedRemovalDocument {
+  readonly operationId: string
+  readonly name: string
+  readonly description: string
+  readonly source: string
+  readonly state: ManagedSkillState
+  readonly expiresAt: string
+}
+
+export type PrepareRemovalEnvelope =
+  | { readonly ok: true; readonly prepared: PreparedRemovalDocument }
+  | { readonly ok: false; readonly error: PublicError }
+
+export type ConfirmRemovalEnvelope =
+  | { readonly ok: true; readonly name: string }
   | { readonly ok: false; readonly error: PublicError }
 
 export type PrepareInstallEnvelope =
@@ -208,4 +226,27 @@ export function isUpdateCheckEnvelope(value: unknown): value is UpdateCheckEnvel
     && typeof value.update.updateAvailable === 'boolean'
     && (value.update.operationId === undefined || typeof value.update.operationId === 'string')
     && (value.update.expiresAt === undefined || typeof value.update.expiresAt === 'string')
+}
+
+function isPreparedRemoval(value: unknown): value is PreparedRemovalDocument {
+  if (!isRecord(value)) return false
+  return typeof value.operationId === 'string'
+    && typeof value.name === 'string'
+    && typeof value.description === 'string'
+    && typeof value.source === 'string'
+    && (value.state === 'current'
+      || value.state === 'locally-modified'
+      || value.state === 'missing'
+      || value.state === 'invalid')
+    && typeof value.expiresAt === 'string'
+}
+
+export function isPrepareRemovalEnvelope(value: unknown): value is PrepareRemovalEnvelope {
+  if (!isRecord(value) || typeof value.ok !== 'boolean') return false
+  return value.ok ? isPreparedRemoval(value.prepared) : isPublicError(value.error)
+}
+
+export function isConfirmRemovalEnvelope(value: unknown): value is ConfirmRemovalEnvelope {
+  if (!isRecord(value) || typeof value.ok !== 'boolean') return false
+  return value.ok ? typeof value.name === 'string' : isPublicError(value.error)
 }

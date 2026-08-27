@@ -11,6 +11,7 @@ import type {
   ManagedSkillDocument,
   ManagedSkillInventoryItem,
   PreparedInstallDocument,
+  PreparedRemovalDocument,
   UpdateCheckDocument,
 } from '../contracts.ts'
 import type { Translate } from './locales.ts'
@@ -32,6 +33,8 @@ export interface SkillManagerSectionProps {
   readonly listManagedSkills: () => Promise<readonly ManagedSkillInventoryItem[]>
   readonly checkSkillUpdate: (name: string) => Promise<UpdateCheckDocument>
   readonly confirmSkillUpdate: (operationId: string) => Promise<ManagedSkillDocument>
+  readonly prepareSkillRemoval: (name: string) => Promise<PreparedRemovalDocument>
+  readonly confirmSkillRemoval: (operationId: string) => Promise<string>
 }
 
 type SearchState =
@@ -62,6 +65,14 @@ type UpdateState =
   | { readonly status: 'success'; readonly name: string }
   | { readonly status: 'error'; readonly message: string }
 
+type RemovalState =
+  | { readonly status: 'idle' }
+  | { readonly status: 'preparing'; readonly name: string }
+  | { readonly status: 'confirming'; readonly prepared: PreparedRemovalDocument }
+  | { readonly status: 'removing'; readonly prepared: PreparedRemovalDocument }
+  | { readonly status: 'success'; readonly name: string }
+  | { readonly status: 'error'; readonly message: string }
+
 function formatInstalls(installs: number): string {
   return new Intl.NumberFormat().format(installs)
 }
@@ -74,6 +85,8 @@ export function SkillManagerSection({
   listManagedSkills,
   checkSkillUpdate,
   confirmSkillUpdate,
+  prepareSkillRemoval,
+  confirmSkillRemoval,
 }: SkillManagerSectionProps): ReactNode {
   const [query, setQuery] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
@@ -82,6 +95,7 @@ export function SkillManagerSection({
   const [inventoryVersion, setInventoryVersion] = useState(0)
   const [inventoryState, setInventoryState] = useState<InventoryState>({ status: 'loading' })
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' })
+  const [removalState, setRemovalState] = useState<RemovalState>({ status: 'idle' })
   const activeRequest = useRef<AbortController | null>(null)
   const activePreparation = useRef<AbortController | null>(null)
 
@@ -198,6 +212,33 @@ export function SkillManagerSection({
       setInventoryVersion(version => version + 1)
     } catch (error) {
       setUpdateState({
+        status: 'error',
+        message: error instanceof Error ? error.message : t('genericError'),
+      })
+    }
+  }
+
+  const beginRemoval = async (name: string): Promise<void> => {
+    setRemovalState({ status: 'preparing', name })
+    try {
+      const prepared = await prepareSkillRemoval(name)
+      setRemovalState({ status: 'confirming', prepared })
+    } catch (error) {
+      setRemovalState({
+        status: 'error',
+        message: error instanceof Error ? error.message : t('genericError'),
+      })
+    }
+  }
+
+  const finishRemoval = async (prepared: PreparedRemovalDocument): Promise<void> => {
+    setRemovalState({ status: 'removing', prepared })
+    try {
+      const name = await confirmSkillRemoval(prepared.operationId)
+      setRemovalState({ status: 'success', name })
+      setInventoryVersion(version => version + 1)
+    } catch (error) {
+      setRemovalState({
         status: 'error',
         message: error instanceof Error ? error.message : t('genericError'),
       })
@@ -356,6 +397,12 @@ export function SkillManagerSection({
                   || updateState.status === 'updating',
                 onClick: () => void checkUpdate(skill.name),
               }, t('checkUpdate')),
+              h('button', {
+                type: 'button',
+                disabled: removalState.status === 'preparing'
+                  || removalState.status === 'removing',
+                onClick: () => void beginRemoval(skill.name),
+              }, t('remove')),
             ),
           )),
         )
@@ -406,6 +453,43 @@ export function SkillManagerSection({
       : null,
     updateState.status === 'error'
       ? h('p', { role: 'alert' }, updateState.message)
+      : null,
+    removalState.status === 'preparing'
+      ? h('p', { role: 'status' }, `${t('preparingRemoval')} ${removalState.name}`)
+      : null,
+    removalState.status === 'confirming'
+      ? h(
+          'div',
+          {
+            role: 'dialog',
+            'aria-modal': 'true',
+            'aria-labelledby': 'dsh-skill-removal-confirmation',
+          },
+          h('h3', { id: 'dsh-skill-removal-confirmation' }, t('confirmRemovalTitle')),
+          h('strong', null, removalState.prepared.name),
+          h('p', null, removalState.prepared.state === 'locally-modified'
+            ? t('modifiedRemovePrompt')
+            : removalState.prepared.state === 'current'
+              ? t('removePrompt')
+              : t('invalidRemovePrompt')),
+          h('button', {
+            type: 'button',
+            onClick: () => setRemovalState({ status: 'idle' }),
+          }, t('cancel')),
+          h('button', {
+            type: 'button',
+            onClick: () => void finishRemoval(removalState.prepared),
+          }, t('confirmRemoval')),
+        )
+      : null,
+    removalState.status === 'removing'
+      ? h('p', { role: 'status' }, t('removing'))
+      : null,
+    removalState.status === 'success'
+      ? h('p', { role: 'status' }, `${t('removed')} ${removalState.name}`)
+      : null,
+    removalState.status === 'error'
+      ? h('p', { role: 'alert' }, removalState.message)
       : null,
   )
 }

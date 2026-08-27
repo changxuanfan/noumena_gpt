@@ -5,6 +5,7 @@ export interface ManagedSkillInspection {
     readonly currentHash?: string;
 }
 export declare function inspectManagedSkill(skillsRoot: string, record: ManagedSkillRecord): Promise<ManagedSkillInspection>;
+export declare function inspectSkillDirectory(target: string, record: ManagedSkillRecord): Promise<ManagedSkillInspection>;
 export declare class InventoryService {
     private readonly skillsRoot;
     constructor(skillsRoot: string);

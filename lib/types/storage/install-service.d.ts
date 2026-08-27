@@ -1,6 +1,7 @@
 import { writeManifestAtomic, type ManagedSkillRecord } from './manifest.ts';
 import { type SkillSnapshot } from './snapshot.ts';
 import type { UpdateCheckDocument } from '../contracts.ts';
+import { MutationLock } from './mutation-lock.ts';
 export interface SnapshotCatalog {
     download(id: string, signal: AbortSignal): Promise<SkillSnapshot>;
 }
@@ -30,6 +31,7 @@ export interface InstallServiceOptions {
     readonly maxPendingOperations?: number;
     readonly warn?: (message: string, error: unknown) => void;
     readonly writeManifest?: typeof writeManifestAtomic;
+    readonly mutationLock?: MutationLock;
 }
 export declare class InstallService {
     private readonly skillsRoot;
@@ -39,15 +41,14 @@ export declare class InstallService {
     private readonly maxPendingOperations;
     private readonly warn;
     private readonly writeManifest;
+    private readonly mutationLock;
     private readonly operations;
     private inFlightPreparations;
     private activeCommits;
-    private writeTail;
     constructor(options: InstallServiceOptions);
     prepare(id: string, signal: AbortSignal): Promise<PreparedInstall>;
     checkUpdate(name: string, signal: AbortSignal): Promise<UpdateCheckDocument>;
     confirm(input: ConfirmInstall): Promise<ManagedSkillRecord>;
-    private enqueue;
     private pruneExpiredOperations;
     private assertOperationCapacity;
     private withPreparationSlot;

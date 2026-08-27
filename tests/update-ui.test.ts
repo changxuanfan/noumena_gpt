@@ -41,6 +41,8 @@ function renderUpdate(
     listManagedSkills: async () => [managed],
     checkSkillUpdate,
     confirmSkillUpdate,
+    prepareSkillRemoval: async () => { throw new Error('not called') },
+    confirmSkillRemoval: async () => { throw new Error('not called') },
   }))
 }
 
