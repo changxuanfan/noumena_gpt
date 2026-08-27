@@ -1,9 +1,9 @@
 # DSH Skill Manager
 
-Install the current public build into the DSH Web profile:
+Install the public `v0.1.0` release into the DSH Web profile:
 
 ```bash
-dsh plugin --profile web add github:changxuanfan/noumena_gpt#main
+dsh plugin --profile web add github:changxuanfan/noumena_gpt#v0.1.0
 ```
 
 Restart `dsh web`, then open **Settings → Skill Manager**.
