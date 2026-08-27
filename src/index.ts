@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+import { mountSearchRoute } from './search-route.ts'
 
 export const name = 'dsh-skill-manager'
 
@@ -48,8 +49,15 @@ export function apply(ctx: Context): void {
   ctx.inject(['webServer'], (scopedContext: Context) => {
     const host = scopedContext as unknown as SkillManagerHost
     host.effect(
-      () => mountHealthRoute(host.webServer),
-      'dsh-skill-manager: health route',
+      () => {
+        const disposeHealth = mountHealthRoute(host.webServer)
+        const disposeSearch = mountSearchRoute(host.webServer)
+        return () => {
+          disposeSearch()
+          disposeHealth()
+        }
+      },
+      'dsh-skill-manager: http routes',
     )
   })
 }
