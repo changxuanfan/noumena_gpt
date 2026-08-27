@@ -56,7 +56,9 @@ async function renderResult(
     prepareSkillRemoval: async () => { throw new Error('not called') },
     confirmSkillRemoval: async () => { throw new Error('not called') },
   }))
-  fireEvent.change(screen.getByLabelText(en.searchLabel), { target: { value: 'safe' } })
+  fireEvent.change(screen.getByRole('searchbox', { name: en.searchLabel }), {
+    target: { value: 'safe' },
+  })
   fireEvent.click(screen.getByRole('button', { name: en.searchAction }))
   await screen.findByRole('heading', { name: result.name })
 }
@@ -67,13 +69,28 @@ describe('Skill Manager installation', () => {
     const confirmInstall = vi.fn(async () => installed)
     await renderResult(prepareInstall, confirmInstall)
 
-    fireEvent.click(screen.getByRole('button', { name: en.install }))
-    expect(await screen.findByRole('dialog')).toBeTruthy()
+    const installButton = screen.getByRole('button', { name: en.install })
+    installButton.focus()
+    fireEvent.click(installButton)
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toBeTruthy()
     expect(prepareInstall).toHaveBeenCalledWith(result.id, expect.any(AbortSignal))
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: en.confirmInstall }),
+    )
+    fireEvent.keyDown(dialog, { key: 'Tab' })
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: en.cancel }),
+    )
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: en.confirmInstall }),
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: en.cancel }))
+    fireEvent.keyDown(dialog, { key: 'Escape' })
     expect(confirmInstall).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(installButton)
   })
 
   it('installs only after explicit confirmation', async () => {
@@ -87,5 +104,8 @@ describe('Skill Manager installation', () => {
 
     expect(await screen.findByText(`${en.installed} safe-skill`)).toBeTruthy()
     expect(confirmInstall).toHaveBeenCalledWith(prepared.operationId, false)
+    expect(document.activeElement).toBe(
+      screen.getByRole('heading', { name: en.title }),
+    )
   })
 })

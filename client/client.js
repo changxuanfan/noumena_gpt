@@ -5,6 +5,63 @@ window.__ModuleLoader__.load({
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 		let react = require("react");
+		//#region src/client/ConfirmDialog.ts
+		function ConfirmDialog({ titleId, title, confirmLabel, cancelLabel, danger = false, onCancel, onConfirm, children }) {
+			const confirmButton = (0, react.useRef)(null);
+			const previousFocus = (0, react.useRef)(null);
+			(0, react.useEffect)(() => {
+				previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+				confirmButton.current?.focus();
+				return () => {
+					const previous = previousFocus.current;
+					const previousDisabled = previous instanceof HTMLButtonElement || previous instanceof HTMLInputElement || previous instanceof HTMLSelectElement || previous instanceof HTMLTextAreaElement ? previous.disabled : false;
+					if (previous?.isConnected && !previousDisabled && previous.tabIndex >= 0) {
+						previous.focus();
+						return;
+					}
+					document.querySelector("#dsh-skill-manager-title")?.focus();
+				};
+			}, []);
+			const onKeyDown = (event) => {
+				if (event.key === "Escape") {
+					event.preventDefault();
+					onCancel();
+					return;
+				}
+				if (event.key !== "Tab") return;
+				const focusable = [...event.currentTarget.querySelectorAll("button:not(:disabled), a[href], input:not(:disabled), [tabindex]:not([tabindex=\"-1\"])")];
+				if (focusable.length === 0) {
+					event.preventDefault();
+					return;
+				}
+				const first = focusable[0];
+				const last = focusable[focusable.length - 1];
+				if (event.shiftKey && document.activeElement === first) {
+					event.preventDefault();
+					last.focus();
+				} else if (!event.shiftKey && document.activeElement === last) {
+					event.preventDefault();
+					first.focus();
+				}
+			};
+			return (0, react.createElement)("div", { className: "dsm-dialog-backdrop" }, (0, react.createElement)("div", {
+				className: "dsm-dialog",
+				role: "dialog",
+				"aria-modal": "true",
+				"aria-labelledby": titleId,
+				onKeyDown
+			}, (0, react.createElement)("h3", { id: titleId }, title), (0, react.createElement)("div", { className: "dsm-dialog-body" }, children), (0, react.createElement)("div", { className: "dsm-dialog-actions" }, (0, react.createElement)("button", {
+				className: "dsm-button dsm-button-secondary",
+				type: "button",
+				onClick: onCancel
+			}, cancelLabel), (0, react.createElement)("button", {
+				className: danger ? "dsm-button dsm-button-danger" : "dsm-button dsm-button-primary",
+				type: "button",
+				ref: confirmButton,
+				onClick: onConfirm
+			}, confirmLabel))));
+		}
+		//#endregion
 		//#region src/client/SkillManagerSection.ts
 		function formatInstalls(installs) {
 			return new Intl.NumberFormat().format(installs);
@@ -20,6 +77,7 @@ window.__ModuleLoader__.load({
 			const [removalState, setRemovalState] = (0, react.useState)({ status: "idle" });
 			const activeRequest = (0, react.useRef)(null);
 			const activePreparation = (0, react.useRef)(null);
+			const operationBusy = installState.status === "preparing" || installState.status === "confirming" || installState.status === "installing" || updateState.status === "checking" || updateState.status === "confirming" || updateState.status === "updating" || removalState.status === "preparing" || removalState.status === "confirming" || removalState.status === "removing";
 			(0, react.useEffect)(() => () => {
 				activeRequest.current?.abort();
 				activePreparation.current?.abort();
@@ -73,6 +131,7 @@ window.__ModuleLoader__.load({
 				runSearch(query);
 			};
 			const beginInstall = async (skill) => {
+				if (operationBusy) return;
 				activePreparation.current?.abort();
 				const controller = new AbortController();
 				activePreparation.current = controller;
@@ -111,6 +170,7 @@ window.__ModuleLoader__.load({
 				}
 			};
 			const checkUpdate = async (name) => {
+				if (operationBusy) return;
 				setUpdateState({
 					status: "checking",
 					name
@@ -152,6 +212,7 @@ window.__ModuleLoader__.load({
 				}
 			};
 			const beginRemoval = async (name) => {
+				if (operationBusy) return;
 				setRemovalState({
 					status: "preparing",
 					name
@@ -188,82 +249,153 @@ window.__ModuleLoader__.load({
 					});
 				}
 			};
-			return (0, react.createElement)("section", { "aria-labelledby": "dsh-skill-manager-title" }, (0, react.createElement)("h2", { id: "dsh-skill-manager-title" }, t("title")), (0, react.createElement)("p", null, t("introduction")), (0, react.createElement)("form", { onSubmit: submit }, (0, react.createElement)("label", { htmlFor: "dsh-skill-search" }, t("searchLabel")), (0, react.createElement)("input", {
+			return (0, react.createElement)("section", {
+				className: "dsm-root",
+				"aria-labelledby": "dsh-skill-manager-title",
+				"aria-busy": operationBusy
+			}, (0, react.createElement)("header", { className: "dsm-header" }, (0, react.createElement)("h2", {
+				id: "dsh-skill-manager-title",
+				tabIndex: -1
+			}, t("title")), (0, react.createElement)("p", { className: "dsm-subtitle" }, t("introduction"))), (0, react.createElement)("section", {
+				className: "dsm-panel",
+				"aria-labelledby": "dsm-search-title"
+			}, (0, react.createElement)("h2", { id: "dsm-search-title" }, t("searchLabel")), (0, react.createElement)("form", {
+				className: "dsm-search",
+				onSubmit: submit
+			}, (0, react.createElement)("label", {
+				className: "dsm-field",
+				htmlFor: "dsh-skill-search"
+			}, t("searchLabel"), (0, react.createElement)("input", {
+				className: "dsm-input",
 				id: "dsh-skill-search",
 				name: "query",
 				type: "search",
 				value: query,
 				placeholder: t("searchPlaceholder"),
 				onChange: (event) => setQuery(event.currentTarget.value)
-			}), (0, react.createElement)("button", {
+			})), (0, react.createElement)("button", {
+				className: "dsm-button dsm-button-primary",
 				type: "submit",
 				disabled: query.trim().length === 0
 			}, t("searchAction"))), state.status === "loading" ? (0, react.createElement)("p", {
+				className: "dsm-status",
 				role: "status",
 				"aria-live": "polite"
-			}, t("searching")) : null, state.status === "error" ? (0, react.createElement)("div", null, (0, react.createElement)("p", { role: "alert" }, state.message), (0, react.createElement)("button", {
+			}, t("searching")) : null, state.status === "error" ? (0, react.createElement)("div", { className: "dsm-status dsm-error" }, (0, react.createElement)("p", { role: "alert" }, state.message), (0, react.createElement)("button", {
+				className: "dsm-button dsm-button-secondary",
 				type: "button",
 				onClick: () => void runSearch(submittedQuery)
-			}, t("retry"))) : null, state.status === "ready" && state.results.length === 0 ? (0, react.createElement)("p", { role: "status" }, t("empty")) : null, state.status === "ready" && state.results.length > 0 ? (0, react.createElement)("ul", { "aria-label": t("searchLabel") }, ...state.results.map((skill) => (0, react.createElement)("li", { key: skill.id }, (0, react.createElement)("article", null, (0, react.createElement)("h3", null, skill.name), (0, react.createElement)("p", null, skill.description ?? t("descriptionUnavailable")), (0, react.createElement)("p", null, skill.source), (0, react.createElement)("p", null, `${formatInstalls(skill.installs)} ${t("installs")}`), (0, react.createElement)("a", {
+			}, t("retry"))) : null, state.status === "ready" && state.results.length === 0 ? (0, react.createElement)("p", {
+				className: "dsm-empty",
+				role: "status"
+			}, t("empty")) : null, state.status === "ready" && state.results.length > 0 ? (0, react.createElement)("ul", {
+				className: "dsm-list",
+				"aria-label": t("searchLabel")
+			}, ...state.results.map((skill) => (0, react.createElement)("li", { key: skill.id }, (0, react.createElement)("article", { className: "dsm-card" }, (0, react.createElement)("h3", null, skill.name), (0, react.createElement)("p", { className: "dsm-description" }, skill.description ?? t("descriptionUnavailable")), (0, react.createElement)("p", { className: "dsm-meta" }, skill.source), (0, react.createElement)("p", { className: "dsm-meta" }, `${formatInstalls(skill.installs)} ${t("installs")}`), (0, react.createElement)("div", { className: "dsm-actions" }, (0, react.createElement)("a", {
+				className: "dsm-link",
 				href: skill.pageUrl,
 				target: "_blank",
 				rel: "noreferrer"
 			}, t("openPage")), (0, react.createElement)("button", {
+				className: "dsm-button dsm-button-primary",
 				type: "button",
-				disabled: installState.status === "preparing" || installState.status === "installing",
+				disabled: operationBusy,
 				onClick: () => void beginInstall(skill)
-			}, t("install")))))) : null, installState.status === "preparing" ? (0, react.createElement)("p", {
+			}, t("install"))))))) : null), installState.status === "preparing" ? (0, react.createElement)("p", {
+				className: "dsm-status",
 				role: "status",
 				"aria-live": "polite"
-			}, t("preparingInstall")) : null, installState.status === "confirming" ? (0, react.createElement)("div", {
-				role: "dialog",
-				"aria-modal": "true",
-				"aria-labelledby": "dsh-skill-install-confirmation"
-			}, (0, react.createElement)("h3", { id: "dsh-skill-install-confirmation" }, t("confirmInstallTitle")), (0, react.createElement)("strong", null, installState.prepared.name), (0, react.createElement)("p", null, installState.prepared.description), (0, react.createElement)("p", null, installState.prepared.source), (0, react.createElement)("p", null, installState.prepared.collision === "managed" ? t("overwritePrompt") : t("installPrompt")), (0, react.createElement)("button", {
-				type: "button",
-				onClick: () => setInstallState({ status: "idle" })
-			}, t("cancel")), (0, react.createElement)("button", {
-				type: "button",
-				onClick: () => void finishInstall(installState.prepared)
-			}, installState.prepared.collision === "managed" ? t("confirmOverwrite") : t("confirmInstall"))) : null, installState.status === "installing" ? (0, react.createElement)("p", {
+			}, t("preparingInstall")) : null, installState.status === "confirming" ? (0, react.createElement)(ConfirmDialog, {
+				titleId: "dsh-skill-install-confirmation",
+				title: t("confirmInstallTitle"),
+				cancelLabel: t("cancel"),
+				confirmLabel: installState.prepared.collision === "managed" ? t("confirmOverwrite") : t("confirmInstall"),
+				onCancel: () => setInstallState({ status: "idle" }),
+				onConfirm: () => void finishInstall(installState.prepared)
+			}, (0, react.createElement)("strong", null, installState.prepared.name), (0, react.createElement)("p", null, installState.prepared.description), (0, react.createElement)("p", null, installState.prepared.source), (0, react.createElement)("p", null, installState.prepared.collision === "managed" ? t("overwritePrompt") : t("installPrompt"))) : null, installState.status === "installing" ? (0, react.createElement)("p", {
+				className: "dsm-status",
 				role: "status",
 				"aria-live": "polite"
-			}, t("installing")) : null, installState.status === "success" ? (0, react.createElement)("p", { role: "status" }, `${t("installed")} ${installState.skill.name}`) : null, installState.status === "error" ? (0, react.createElement)("p", { role: "alert" }, installState.message) : null, (0, react.createElement)("h2", null, t("installedTitle")), inventoryState.status === "loading" ? (0, react.createElement)("p", { role: "status" }, t("loadingInstalled")) : null, inventoryState.status === "error" ? (0, react.createElement)("div", null, (0, react.createElement)("p", { role: "alert" }, inventoryState.message), (0, react.createElement)("button", {
+			}, t("installing")) : null, installState.status === "success" ? (0, react.createElement)("p", {
+				className: "dsm-status",
+				role: "status"
+			}, `${t("installed")} ${installState.skill.name}`) : null, installState.status === "error" ? (0, react.createElement)("p", {
+				className: "dsm-status dsm-error",
+				role: "alert"
+			}, installState.message) : null, (0, react.createElement)("section", {
+				className: "dsm-panel",
+				"aria-labelledby": "dsm-installed-title"
+			}, (0, react.createElement)("h2", { id: "dsm-installed-title" }, t("installedTitle")), inventoryState.status === "loading" ? (0, react.createElement)("p", {
+				className: "dsm-status",
+				role: "status"
+			}, t("loadingInstalled")) : null, inventoryState.status === "error" ? (0, react.createElement)("div", { className: "dsm-status dsm-error" }, (0, react.createElement)("p", { role: "alert" }, inventoryState.message), (0, react.createElement)("button", {
+				className: "dsm-button dsm-button-secondary",
 				type: "button",
 				onClick: () => setInventoryVersion((version) => version + 1)
-			}, t("retry"))) : null, inventoryState.status === "ready" && inventoryState.skills.length === 0 ? (0, react.createElement)("p", null, t("noInstalled")) : null, inventoryState.status === "ready" && inventoryState.skills.length > 0 ? (0, react.createElement)("ul", { "aria-label": t("installedTitle") }, ...inventoryState.skills.map((skill) => (0, react.createElement)("li", { key: skill.name }, (0, react.createElement)("article", null, (0, react.createElement)("h3", null, skill.name), (0, react.createElement)("p", null, skill.description), (0, react.createElement)("p", null, skill.source), (0, react.createElement)("p", null, t(skill.state === "current" ? "stateCurrent" : skill.state === "locally-modified" ? "stateModified" : skill.state === "missing" ? "stateMissing" : "stateInvalid")), (0, react.createElement)("a", {
+			}, t("retry"))) : null, inventoryState.status === "ready" && inventoryState.skills.length === 0 ? (0, react.createElement)("p", { className: "dsm-empty" }, t("noInstalled")) : null, inventoryState.status === "ready" && inventoryState.skills.length > 0 ? (0, react.createElement)("ul", {
+				className: "dsm-list",
+				"aria-label": t("installedTitle")
+			}, ...inventoryState.skills.map((skill) => (0, react.createElement)("li", { key: skill.name }, (0, react.createElement)("article", { className: "dsm-card" }, (0, react.createElement)("h3", null, skill.name), (0, react.createElement)("p", { className: "dsm-description" }, skill.description), (0, react.createElement)("p", { className: "dsm-meta" }, skill.source), (0, react.createElement)("span", {
+				className: "dsm-badge",
+				"data-state": skill.state
+			}, t(skill.state === "current" ? "stateCurrent" : skill.state === "locally-modified" ? "stateModified" : skill.state === "missing" ? "stateMissing" : "stateInvalid")), (0, react.createElement)("div", { className: "dsm-actions" }, (0, react.createElement)("a", {
+				className: "dsm-link",
 				href: skill.pageUrl,
 				target: "_blank",
 				rel: "noreferrer"
 			}, t("openPage")), (0, react.createElement)("button", {
+				className: "dsm-button dsm-button-secondary",
 				type: "button",
-				disabled: updateState.status === "checking" || updateState.status === "updating",
+				disabled: operationBusy,
 				onClick: () => void checkUpdate(skill.name)
 			}, t("checkUpdate")), (0, react.createElement)("button", {
+				className: "dsm-button dsm-button-danger",
 				type: "button",
-				disabled: removalState.status === "preparing" || removalState.status === "removing",
+				disabled: operationBusy,
 				onClick: () => void beginRemoval(skill.name)
-			}, t("remove")))))) : null, updateState.status === "checking" ? (0, react.createElement)("p", { role: "status" }, `${t("checkingUpdate")} ${updateState.name}`) : null, updateState.status === "result" ? (0, react.createElement)("p", { role: "status" }, updateState.update.status === "current" ? t("upToDate") : updateState.update.status === "source-unavailable" ? t("sourceUnavailable") : updateState.update.status === "locally-modified" ? t("stateModified") : t("localInvalid")) : null, updateState.status === "confirming" ? (0, react.createElement)("div", {
-				role: "dialog",
-				"aria-modal": "true",
-				"aria-labelledby": "dsh-skill-update-confirmation"
-			}, (0, react.createElement)("h3", { id: "dsh-skill-update-confirmation" }, t("confirmUpdateTitle")), (0, react.createElement)("strong", null, updateState.update.name), (0, react.createElement)("p", null, updateState.update.status === "locally-modified" ? t("modifiedUpdatePrompt") : updateState.update.status === "local-invalid" ? t("repairUpdatePrompt") : t("updatePrompt")), (0, react.createElement)("button", {
-				type: "button",
-				onClick: () => setUpdateState({ status: "idle" })
-			}, t("cancel")), (0, react.createElement)("button", {
-				type: "button",
-				onClick: () => void applyUpdate(updateState.update)
-			}, t("confirmUpdate"))) : null, updateState.status === "updating" ? (0, react.createElement)("p", { role: "status" }, t("updating")) : null, updateState.status === "success" ? (0, react.createElement)("p", { role: "status" }, `${t("updated")} ${updateState.name}`) : null, updateState.status === "error" ? (0, react.createElement)("p", { role: "alert" }, updateState.message) : null, removalState.status === "preparing" ? (0, react.createElement)("p", { role: "status" }, `${t("preparingRemoval")} ${removalState.name}`) : null, removalState.status === "confirming" ? (0, react.createElement)("div", {
-				role: "dialog",
-				"aria-modal": "true",
-				"aria-labelledby": "dsh-skill-removal-confirmation"
-			}, (0, react.createElement)("h3", { id: "dsh-skill-removal-confirmation" }, t("confirmRemovalTitle")), (0, react.createElement)("strong", null, removalState.prepared.name), (0, react.createElement)("p", null, removalState.prepared.state === "locally-modified" ? t("modifiedRemovePrompt") : removalState.prepared.state === "current" ? t("removePrompt") : t("invalidRemovePrompt")), (0, react.createElement)("button", {
-				type: "button",
-				onClick: () => setRemovalState({ status: "idle" })
-			}, t("cancel")), (0, react.createElement)("button", {
-				type: "button",
-				onClick: () => void finishRemoval(removalState.prepared)
-			}, t("confirmRemoval"))) : null, removalState.status === "removing" ? (0, react.createElement)("p", { role: "status" }, t("removing")) : null, removalState.status === "success" ? (0, react.createElement)("p", { role: "status" }, `${t("removed")} ${removalState.name}`) : null, removalState.status === "error" ? (0, react.createElement)("p", { role: "alert" }, removalState.message) : null);
+			}, t("remove"))))))) : null), updateState.status === "checking" ? (0, react.createElement)("p", {
+				className: "dsm-status",
+				role: "status"
+			}, `${t("checkingUpdate")} ${updateState.name}`) : null, updateState.status === "result" ? (0, react.createElement)("p", {
+				className: "dsm-status",
+				role: "status"
+			}, updateState.update.status === "current" ? t("upToDate") : updateState.update.status === "source-unavailable" ? t("sourceUnavailable") : updateState.update.status === "locally-modified" ? t("stateModified") : t("localInvalid")) : null, updateState.status === "confirming" ? (0, react.createElement)(ConfirmDialog, {
+				titleId: "dsh-skill-update-confirmation",
+				title: t("confirmUpdateTitle"),
+				cancelLabel: t("cancel"),
+				confirmLabel: t("confirmUpdate"),
+				onCancel: () => setUpdateState({ status: "idle" }),
+				onConfirm: () => void applyUpdate(updateState.update)
+			}, (0, react.createElement)("strong", null, updateState.update.name), (0, react.createElement)("p", null, updateState.update.status === "locally-modified" ? t("modifiedUpdatePrompt") : updateState.update.status === "local-invalid" ? t("repairUpdatePrompt") : t("updatePrompt"))) : null, updateState.status === "updating" ? (0, react.createElement)("p", {
+				className: "dsm-status",
+				role: "status"
+			}, t("updating")) : null, updateState.status === "success" ? (0, react.createElement)("p", {
+				className: "dsm-status",
+				role: "status"
+			}, `${t("updated")} ${updateState.name}`) : null, updateState.status === "error" ? (0, react.createElement)("p", {
+				className: "dsm-status dsm-error",
+				role: "alert"
+			}, updateState.message) : null, removalState.status === "preparing" ? (0, react.createElement)("p", {
+				className: "dsm-status",
+				role: "status"
+			}, `${t("preparingRemoval")} ${removalState.name}`) : null, removalState.status === "confirming" ? (0, react.createElement)(ConfirmDialog, {
+				titleId: "dsh-skill-removal-confirmation",
+				title: t("confirmRemovalTitle"),
+				cancelLabel: t("cancel"),
+				confirmLabel: t("confirmRemoval"),
+				danger: true,
+				onCancel: () => setRemovalState({ status: "idle" }),
+				onConfirm: () => void finishRemoval(removalState.prepared)
+			}, (0, react.createElement)("strong", null, removalState.prepared.name), (0, react.createElement)("p", null, removalState.prepared.state === "locally-modified" ? t("modifiedRemovePrompt") : removalState.prepared.state === "current" ? t("removePrompt") : t("invalidRemovePrompt"))) : null, removalState.status === "removing" ? (0, react.createElement)("p", {
+				className: "dsm-status",
+				role: "status"
+			}, t("removing")) : null, removalState.status === "success" ? (0, react.createElement)("p", {
+				className: "dsm-status",
+				role: "status"
+			}, `${t("removed")} ${removalState.name}`) : null, removalState.status === "error" ? (0, react.createElement)("p", {
+				className: "dsm-status dsm-error",
+				role: "alert"
+			}, removalState.message) : null);
 		}
 		//#endregion
 		//#region src/client/locales.ts
@@ -619,6 +751,30 @@ window.__ModuleLoader__.load({
 			return body.name;
 		}
 		//#endregion
+		//#region src/client/styles.ts
+		const STYLE_ID = "dsh-skill-manager/styles";
+		const STYLE_TEXT = `
+.dsm-root{display:grid;gap:28px;padding:8px 4px 28px;color:var(--dsw-color-text-primary,#171717)}
+.dsm-header{display:grid;gap:8px}.dsm-header h2,.dsm-panel h2{margin:0}.dsm-subtitle{margin:0;color:var(--dsw-color-text-secondary,#666)}
+.dsm-panel{display:grid;gap:16px}.dsm-search{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.dsm-field{display:grid;gap:7px;flex:1 1 320px;font-weight:600}.dsm-input{box-sizing:border-box;width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--dsw-color-border,#d8d8d8);border-radius:10px;background:var(--dsw-color-bg-primary,#fff);color:inherit;font:inherit}
+.dsm-button{min-height:36px;padding:7px 13px;border:1px solid transparent;border-radius:9px;font:inherit;font-weight:600;cursor:pointer}.dsm-button:disabled{cursor:not-allowed;opacity:.5}.dsm-button-primary{background:var(--dsw-alias-button-primary-fill,#3b55d9);color:var(--dsw-alias-label-primary-inverted,#fff)}.dsm-button-secondary{border-color:var(--dsw-color-border,#d8d8d8);background:var(--dsw-color-bg-secondary,#f6f6f6);color:inherit}.dsm-button-danger{background:#c73e3e;color:#fff}
+.dsm-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin:0;padding:0;list-style:none}.dsm-card{display:grid;align-content:start;gap:10px;min-width:0;height:100%;box-sizing:border-box;padding:16px;border:1px solid var(--dsw-color-border,#dedede);border-radius:14px;background:var(--dsw-color-bg-secondary,#fafafa)}.dsm-card h3{margin:0;overflow-wrap:anywhere}.dsm-card p{margin:0;line-height:1.5}.dsm-description{color:var(--dsw-color-text-secondary,#5f5f5f)}.dsm-meta{font-size:13px;color:var(--dsw-color-text-secondary,#707070)}.dsm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:auto;padding-top:4px}.dsm-link{align-content:center;color:var(--dsw-alias-label-primary,#1f1f1f);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.dsm-status{margin:0;padding:11px 13px;border-radius:10px;background:var(--dsw-color-bg-secondary,#f3f5ff)}.dsm-error{border:1px solid #d97a7a;background:#fff1f1;color:#8e2424}.dsm-empty{padding:24px;border:1px dashed var(--dsw-color-border,#ccc);border-radius:12px;text-align:center;color:var(--dsw-color-text-secondary,#666)}
+.dsm-badge{justify-self:start;padding:3px 8px;border-radius:999px;background:#e8edff;color:#334bbd;font-size:12px;font-weight:700}.dsm-badge[data-state="locally-modified"],.dsm-badge[data-state="invalid"],.dsm-badge[data-state="missing"]{background:#fff0cd;color:#805800}
+.dsm-dialog-backdrop{position:fixed;z-index:10000;inset:0;display:grid;place-items:center;padding:20px;background:rgb(0 0 0/.45)}.dsm-dialog{display:grid;gap:16px;width:min(460px,100%);max-height:min(680px,calc(100vh - 40px));overflow:auto;box-sizing:border-box;padding:22px;border-radius:16px;background:var(--dsw-color-bg-primary,#fff);box-shadow:0 20px 60px rgb(0 0 0/.28)}.dsm-dialog h3{margin:0}.dsm-dialog-body{display:grid;gap:10px}.dsm-dialog-body p{margin:0;line-height:1.5}.dsm-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+@media (max-width:640px){.dsm-list{grid-template-columns:1fr}.dsm-search>.dsm-button{width:100%}}
+`;
+		function installStyles() {
+			if (document.querySelector(`style[data-plugin-css="dsh-skill-manager/styles"]`) !== null) return () => void 0;
+			const style = document.createElement("style");
+			style.dataset.plugin = "dsh-skill-manager";
+			style.dataset.pluginCss = STYLE_ID;
+			style.textContent = STYLE_TEXT;
+			document.head.appendChild(style);
+			return () => style.remove();
+		}
+		//#endregion
 		//#region src/client/index.ts
 		const namespace = "dsh-skill-manager";
 		const name = namespace;
@@ -628,6 +784,7 @@ window.__ModuleLoader__.load({
 				en,
 				zh
 			}), "dsh-skill-manager: dictionaries");
+			ctx.effect(installStyles, "dsh-skill-manager: styles");
 			const t = ctx.locale.bind(namespace);
 			ctx.slots.inject("settings.section", () => ctx.slots.register({
 				name: "settings.section",
