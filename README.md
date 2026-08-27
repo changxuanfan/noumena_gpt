@@ -14,17 +14,17 @@ Verify that your shell can find it:
 pnpm --version
 ```
 
-Install the public `v0.1.0` release into the DSH Web profile:
+Install the public `v0.1.1` release into the DSH Web profile:
 
 ```bash
-dsh plugin --profile web add github:changxuanfan/noumena_gpt#v0.1.0
+dsh plugin --profile web add github:changxuanfan/noumena_gpt#v0.1.1
 ```
 
 Restart `dsh web`, then open **Settings → Skill Manager**.
 
 ![DSH Skill Manager in the dark theme](assets/skill-manager-dark.png)
 
-[Watch the v0.1.0 functional demonstration video (WebM)](https://github.com/changxuanfan/noumena_gpt/releases/download/v0.1.0/dsh-skill-manager-v0.1.0-demo.webm)
+[Watch the original functional demonstration video (WebM)](https://github.com/changxuanfan/noumena_gpt/releases/download/v0.1.0/dsh-skill-manager-v0.1.0-demo.webm)
 
 DSH Skill Manager is a bilingual DeepSeek Harness plugin for discovering
 Skills.sh skills and safely managing the local copies that the plugin owns.

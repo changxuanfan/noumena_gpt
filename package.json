@@ -1,6 +1,6 @@
 {
   "name": "dsh-skill-manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Manage Skills.sh skills from DeepSeek Harness Web Settings",
   "type": "module",
   "main": "lib/index.js",
