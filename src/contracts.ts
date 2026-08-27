@@ -11,6 +11,7 @@ export type SearchErrorCode =
   | 'invalid-query'
   | 'network'
   | 'timeout'
+  | 'rate-limited'
   | 'upstream'
   | 'invalid-response'
 
@@ -28,6 +29,7 @@ export type LifecycleErrorCode =
   | 'not-managed'
   | 'state-changed'
   | 'remove-failed'
+  | 'source-unavailable'
 
 export type PublicErrorCode = SearchErrorCode | LifecycleErrorCode
 
@@ -147,6 +149,7 @@ function isSearchErrorCode(value: unknown): value is SearchErrorCode {
   return value === 'invalid-query'
     || value === 'network'
     || value === 'timeout'
+    || value === 'rate-limited'
     || value === 'upstream'
     || value === 'invalid-response'
 }

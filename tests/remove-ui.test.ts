@@ -44,6 +44,7 @@ function renderRemoval(confirmSkillRemoval: (operationId: string) => Promise<str
     prepareSkillRemoval: async () => prepared,
     confirmSkillRemoval,
   }))
+  fireEvent.click(screen.getByRole('tab', { name: /Managed Skills/ }))
 }
 
 describe('Managed Skill removal UI', () => {

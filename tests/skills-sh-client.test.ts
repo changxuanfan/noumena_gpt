@@ -23,7 +23,7 @@ describe('SkillsShClient', () => {
 
       const name = url.pathname.endsWith('/first') ? 'First description' : 'Second description'
       return json({
-        hash: 'snapshot',
+        hash: 'a'.repeat(64),
         files: [{
           path: 'SKILL.md',
           contents: `---\nname: test\ndescription: ${name}\n---\n`,
@@ -112,7 +112,7 @@ describe('SkillsShClient', () => {
   })
 
   it('rejects more results than requested before enrichment', async () => {
-    const skills = Array.from({ length: 21 }, (_, index) => ({
+    const skills = Array.from({ length: 7 }, (_, index) => ({
       id: `owner/repo/skill-${index}`,
       name: `skill-${index}`,
       source: 'owner/repo',
@@ -123,5 +123,130 @@ describe('SkillsShClient', () => {
 
     await expect(client.search('skill', new AbortController().signal))
       .rejects.toMatchObject<Partial<SkillsShError>>({ code: 'invalid-response' })
+  })
+
+  it('limits each search page to six results', async () => {
+    let requestedLimit: string | null = null
+    const fetcher: Fetcher = async input => {
+      const url = new URL(String(input))
+      requestedLimit = url.searchParams.get('limit')
+      return json({ skills: [] })
+    }
+
+    await new SkillsShClient({ fetcher }).search('skill', new AbortController().signal)
+    expect(requestedLimit).toBe('6')
+  })
+
+  it('reuses an enriched snapshot when installation downloads the same skill', async () => {
+    let downloadRequests = 0
+    const fetcher: Fetcher = async input => {
+      const url = new URL(String(input))
+      if (url.pathname === '/api/search') {
+        return json({
+          skills: [{
+            id: 'owner/repo/safe-skill',
+            name: 'safe-skill',
+            source: 'owner/repo',
+            installs: 10,
+          }],
+        })
+      }
+      downloadRequests += 1
+      return json({
+        hash: 'a'.repeat(64),
+        files: [{
+          path: 'SKILL.md',
+          contents: '---\nname: safe-skill\ndescription: Safe skill\n---\n',
+        }],
+      })
+    }
+    const client = new SkillsShClient({ fetcher })
+
+    await client.search('safe', new AbortController().signal)
+    await client.download('owner/repo/safe-skill', new AbortController().signal)
+
+    expect(downloadRequests).toBe(1)
+  })
+
+  it('preserves rate-limit semantics and short-circuits subsequent downloads', async () => {
+    let requests = 0
+    const fetcher: Fetcher = async () => {
+      requests += 1
+      return json({
+        error: 'rate_limit_exceeded',
+        message: 'Rate limit exceeded. Maximum 60 requests per hour.',
+      }, 429)
+    }
+    const client = new SkillsShClient({ fetcher })
+
+    await expect(client.download(
+      'owner/repo/safe-skill',
+      new AbortController().signal,
+    )).rejects.toMatchObject({ code: 'rate-limited', status: 429 })
+    await expect(client.download(
+      'owner/repo/another-skill',
+      new AbortController().signal,
+    )).rejects.toMatchObject({ code: 'rate-limited', status: 429 })
+    expect(requests).toBe(1)
+  })
+
+  it('evicts least-recently-used snapshots when the byte budget is exceeded', async () => {
+    let requests = 0
+    const fetcher: Fetcher = async input => {
+      requests += 1
+      const id = new URL(String(input)).pathname.split('/').at(-1)
+      return json({
+        hash: 'a'.repeat(64),
+        files: [{
+          path: 'SKILL.md',
+          contents: `---\nname: ${id}\ndescription: ${'x'.repeat(100)}\n---\n`,
+        }],
+      })
+    }
+    const client = new SkillsShClient({
+      fetcher,
+      snapshotCacheMaxBytes: 250,
+    })
+
+    await client.download('owner/repo/first', new AbortController().signal)
+    await client.download('owner/repo/second', new AbortController().signal)
+    await client.download('owner/repo/first', new AbortController().signal)
+
+    expect(requests).toBe(3)
+  })
+
+  it('does not cache a snapshot that fails installation resource validation', async () => {
+    let requests = 0
+    const fetcher: Fetcher = async () => {
+      requests += 1
+      return requests === 1
+        ? json({
+            hash: 'a'.repeat(64),
+            files: Array.from({ length: 501 }, (_, index) => ({
+              path: index === 0 ? 'SKILL.md' : `references/${index}.md`,
+              contents: index === 0
+                ? '---\nname: safe-skill\ndescription: Safe\n---\n'
+                : 'content',
+            })),
+          })
+        : json({
+            hash: 'b'.repeat(64),
+            files: [{
+              path: 'SKILL.md',
+              contents: '---\nname: safe-skill\ndescription: Safe\n---\n',
+            }],
+          })
+    }
+    const client = new SkillsShClient({ fetcher })
+
+    await expect(client.download(
+      'owner/repo/safe-skill',
+      new AbortController().signal,
+    )).rejects.toMatchObject({ code: 'resource-limit' })
+    await expect(client.download(
+      'owner/repo/safe-skill',
+      new AbortController().signal,
+    )).resolves.toMatchObject({ hash: 'b'.repeat(64) })
+    expect(requests).toBe(2)
   })
 })

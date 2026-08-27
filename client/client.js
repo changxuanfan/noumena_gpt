@@ -68,6 +68,7 @@ window.__ModuleLoader__.load({
 		}
 		function SkillManagerSection({ t, search, prepareInstall, confirmInstall, listManagedSkills, checkSkillUpdate, confirmSkillUpdate, prepareSkillRemoval, confirmSkillRemoval }) {
 			const [query, setQuery] = (0, react.useState)("");
+			const [activeTab, setActiveTab] = (0, react.useState)("discover");
 			const [submittedQuery, setSubmittedQuery] = (0, react.useState)("");
 			const [state, setState] = (0, react.useState)({ status: "idle" });
 			const [installState, setInstallState] = (0, react.useState)({ status: "idle" });
@@ -77,7 +78,23 @@ window.__ModuleLoader__.load({
 			const [removalState, setRemovalState] = (0, react.useState)({ status: "idle" });
 			const activeRequest = (0, react.useRef)(null);
 			const activePreparation = (0, react.useRef)(null);
+			const discoverTab = (0, react.useRef)(null);
+			const managedTab = (0, react.useRef)(null);
 			const operationBusy = installState.status === "preparing" || installState.status === "confirming" || installState.status === "installing" || updateState.status === "checking" || updateState.status === "confirming" || updateState.status === "updating" || removalState.status === "preparing" || removalState.status === "confirming" || removalState.status === "removing";
+			const selectTab = (tab) => {
+				setActiveTab(tab);
+				(tab === "discover" ? discoverTab : managedTab).current?.focus();
+			};
+			const onTabKeyDown = (event) => {
+				let next = null;
+				if (event.key === "ArrowRight" || event.key === "ArrowDown") next = activeTab === "discover" ? "managed" : "discover";
+				else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = activeTab === "managed" ? "discover" : "managed";
+				else if (event.key === "Home") next = "discover";
+				else if (event.key === "End") next = "managed";
+				if (next === null) return;
+				event.preventDefault();
+				selectTab(next);
+			};
 			(0, react.useEffect)(() => () => {
 				activeRequest.current?.abort();
 				activePreparation.current?.abort();
@@ -132,45 +149,57 @@ window.__ModuleLoader__.load({
 			};
 			const beginInstall = async (skill) => {
 				if (operationBusy) return;
+				setUpdateState({ status: "idle" });
+				setRemovalState({ status: "idle" });
 				activePreparation.current?.abort();
 				const controller = new AbortController();
 				activePreparation.current = controller;
-				setInstallState({ status: "preparing" });
+				setInstallState({
+					status: "preparing",
+					catalogId: skill.id
+				});
 				try {
 					const prepared = await prepareInstall(skill.id, controller.signal);
 					if (activePreparation.current === controller) setInstallState({
 						status: "confirming",
+						catalogId: skill.id,
 						prepared
 					});
 				} catch (error) {
 					if (controller.signal.aborted || activePreparation.current !== controller) return;
 					setInstallState({
 						status: "error",
+						catalogId: skill.id,
 						message: error instanceof Error ? error.message : t("genericError")
 					});
 				}
 			};
-			const finishInstall = async (prepared) => {
+			const finishInstall = async (catalogId, prepared) => {
 				setInstallState({
 					status: "installing",
+					catalogId,
 					prepared
 				});
 				try {
 					const skill = await confirmInstall(prepared.operationId, prepared.collision === "managed");
 					setInstallState({
 						status: "success",
+						catalogId,
 						skill
 					});
 					setInventoryVersion((version) => version + 1);
 				} catch (error) {
 					setInstallState({
 						status: "error",
+						catalogId,
 						message: error instanceof Error ? error.message : t("genericError")
 					});
 				}
 			};
 			const checkUpdate = async (name) => {
 				if (operationBusy) return;
+				setInstallState({ status: "idle" });
+				setRemovalState({ status: "idle" });
 				setUpdateState({
 					status: "checking",
 					name
@@ -187,6 +216,7 @@ window.__ModuleLoader__.load({
 				} catch (error) {
 					setUpdateState({
 						status: "error",
+						name,
 						message: error instanceof Error ? error.message : t("genericError")
 					});
 				}
@@ -207,12 +237,15 @@ window.__ModuleLoader__.load({
 				} catch (error) {
 					setUpdateState({
 						status: "error",
+						name: update.name,
 						message: error instanceof Error ? error.message : t("genericError")
 					});
 				}
 			};
 			const beginRemoval = async (name) => {
 				if (operationBusy) return;
+				setInstallState({ status: "idle" });
+				setUpdateState({ status: "idle" });
 				setRemovalState({
 					status: "preparing",
 					name
@@ -226,6 +259,7 @@ window.__ModuleLoader__.load({
 				} catch (error) {
 					setRemovalState({
 						status: "error",
+						name,
 						message: error instanceof Error ? error.message : t("genericError")
 					});
 				}
@@ -245,10 +279,56 @@ window.__ModuleLoader__.load({
 				} catch (error) {
 					setRemovalState({
 						status: "error",
+						name: prepared.name,
 						message: error instanceof Error ? error.message : t("genericError")
 					});
 				}
 			};
+			const managedSkills = inventoryState.status === "ready" ? inventoryState.skills : [];
+			const installedCatalogIds = new Set(managedSkills.map((skill) => skill.catalogId));
+			if (installState.status === "success") installedCatalogIds.add(installState.catalogId);
+			const updateMessage = updateState.status === "result" ? updateState.update.status === "current" ? t("upToDate") : updateState.update.status === "source-unavailable" ? t("sourceUnavailable") : updateState.update.status === "locally-modified" ? t("stateModified") : t("localInvalid") : null;
+			const notice = installState.status === "preparing" ? {
+				kind: "status",
+				text: t("preparingInstall")
+			} : installState.status === "installing" ? {
+				kind: "status",
+				text: t("installing")
+			} : installState.status === "success" ? {
+				kind: "success",
+				text: `${t("installed")} ${installState.skill.name}`,
+				viewManaged: true
+			} : installState.status === "error" ? {
+				kind: "error",
+				text: installState.message
+			} : updateState.status === "checking" ? {
+				kind: "status",
+				text: `${t("checkingUpdate")} ${updateState.name}`
+			} : updateState.status === "updating" ? {
+				kind: "status",
+				text: t("updating")
+			} : updateState.status === "success" ? {
+				kind: "success",
+				text: `${t("updated")} ${updateState.name}`
+			} : updateState.status === "error" ? {
+				kind: "error",
+				text: updateState.message
+			} : updateMessage !== null ? {
+				kind: "status",
+				text: updateMessage
+			} : removalState.status === "preparing" ? {
+				kind: "status",
+				text: `${t("preparingRemoval")} ${removalState.name}`
+			} : removalState.status === "removing" ? {
+				kind: "status",
+				text: t("removing")
+			} : removalState.status === "success" ? {
+				kind: "success",
+				text: `${t("removed")} ${removalState.name}`
+			} : removalState.status === "error" ? {
+				kind: "error",
+				text: removalState.message
+			} : null;
 			return (0, react.createElement)("section", {
 				className: "dsm-root",
 				"aria-labelledby": "dsh-skill-manager-title",
@@ -256,9 +336,44 @@ window.__ModuleLoader__.load({
 			}, (0, react.createElement)("header", { className: "dsm-header" }, (0, react.createElement)("h2", {
 				id: "dsh-skill-manager-title",
 				tabIndex: -1
-			}, t("title")), (0, react.createElement)("p", { className: "dsm-subtitle" }, t("introduction"))), (0, react.createElement)("section", {
+			}, t("title")), (0, react.createElement)("p", { className: "dsm-subtitle" }, t("introduction"))), (0, react.createElement)("div", {
+				className: "dsm-tabs",
+				role: "tablist",
+				"aria-label": t("title"),
+				onKeyDown: onTabKeyDown
+			}, (0, react.createElement)("button", {
+				className: "dsm-tab",
+				id: "dsm-discover-tab",
+				type: "button",
+				role: "tab",
+				ref: discoverTab,
+				tabIndex: activeTab === "discover" ? 0 : -1,
+				"aria-selected": activeTab === "discover",
+				"aria-controls": "dsm-discover-panel",
+				onClick: () => setActiveTab("discover")
+			}, t("discoverTab")), (0, react.createElement)("button", {
+				className: "dsm-tab",
+				id: "dsm-managed-tab",
+				type: "button",
+				role: "tab",
+				ref: managedTab,
+				tabIndex: activeTab === "managed" ? 0 : -1,
+				"aria-selected": activeTab === "managed",
+				"aria-controls": "dsm-managed-panel",
+				onClick: () => setActiveTab("managed")
+			}, `${t("managedTab")} (${managedSkills.length})`)), notice === null ? null : (0, react.createElement)("div", {
+				className: `dsm-notice dsm-notice-${notice.kind}`,
+				role: notice.kind === "error" ? "alert" : "status",
+				"aria-live": notice.kind === "error" ? "assertive" : "polite"
+			}, (0, react.createElement)("span", null, notice.text), "viewManaged" in notice && notice.viewManaged ? (0, react.createElement)("button", {
+				className: "dsm-button dsm-button-secondary",
+				type: "button",
+				onClick: () => setActiveTab("managed")
+			}, t("viewManaged")) : null), activeTab === "discover" ? (0, react.createElement)("section", {
 				className: "dsm-panel",
-				"aria-labelledby": "dsm-search-title"
+				id: "dsm-discover-panel",
+				role: "tabpanel",
+				"aria-labelledby": "dsm-discover-tab"
 			}, (0, react.createElement)("h2", { id: "dsm-search-title" }, t("searchLabel")), (0, react.createElement)("form", {
 				className: "dsm-search",
 				onSubmit: submit
@@ -272,7 +387,9 @@ window.__ModuleLoader__.load({
 				type: "search",
 				value: query,
 				placeholder: t("searchPlaceholder"),
-				onChange: (event) => setQuery(event.currentTarget.value)
+				onChange: (event) => {
+					setQuery(event.currentTarget.value);
+				}
 			})), (0, react.createElement)("button", {
 				className: "dsm-button dsm-button-primary",
 				type: "submit",
@@ -291,40 +408,33 @@ window.__ModuleLoader__.load({
 			}, t("empty")) : null, state.status === "ready" && state.results.length > 0 ? (0, react.createElement)("ul", {
 				className: "dsm-list",
 				"aria-label": t("searchLabel")
-			}, ...state.results.map((skill) => (0, react.createElement)("li", { key: skill.id }, (0, react.createElement)("article", { className: "dsm-card" }, (0, react.createElement)("h3", null, skill.name), (0, react.createElement)("p", { className: "dsm-description" }, skill.description ?? t("descriptionUnavailable")), (0, react.createElement)("p", { className: "dsm-meta" }, skill.source), (0, react.createElement)("p", { className: "dsm-meta" }, `${formatInstalls(skill.installs)} ${t("installs")}`), (0, react.createElement)("div", { className: "dsm-actions" }, (0, react.createElement)("a", {
-				className: "dsm-link",
-				href: skill.pageUrl,
-				target: "_blank",
-				rel: "noreferrer"
-			}, t("openPage")), (0, react.createElement)("button", {
-				className: "dsm-button dsm-button-primary",
-				type: "button",
-				disabled: operationBusy,
-				onClick: () => void beginInstall(skill)
-			}, t("install"))))))) : null), installState.status === "preparing" ? (0, react.createElement)("p", {
-				className: "dsm-status",
-				role: "status",
-				"aria-live": "polite"
-			}, t("preparingInstall")) : null, installState.status === "confirming" ? (0, react.createElement)(ConfirmDialog, {
+			}, ...state.results.map((skill) => {
+				const isInstalled = installedCatalogIds.has(skill.id);
+				const isTarget = installState.status !== "idle" && installState.catalogId === skill.id;
+				const buttonLabel = isInstalled ? t("installedBadge") : isTarget && installState.status === "preparing" ? t("preparingInstall") : isTarget && installState.status === "installing" ? t("installing") : t("install");
+				return (0, react.createElement)("li", { key: skill.id }, (0, react.createElement)("article", { className: "dsm-card" }, (0, react.createElement)("h3", null, skill.name), (0, react.createElement)("p", { className: "dsm-description" }, skill.description ?? t("descriptionUnavailable")), (0, react.createElement)("p", { className: "dsm-meta" }, skill.source), (0, react.createElement)("p", { className: "dsm-meta" }, `${formatInstalls(skill.installs)} ${t("installs")}`), isTarget && installState.status === "error" ? (0, react.createElement)("p", { className: "dsm-card-feedback dsm-error" }, installState.message) : null, isTarget && installState.status === "success" ? (0, react.createElement)("p", { className: "dsm-card-feedback dsm-success" }, t("installed")) : null, (0, react.createElement)("div", { className: "dsm-actions" }, (0, react.createElement)("a", {
+					className: "dsm-link",
+					href: skill.pageUrl,
+					target: "_blank",
+					rel: "noreferrer"
+				}, t("openPage")), (0, react.createElement)("button", {
+					className: "dsm-button dsm-button-primary",
+					type: "button",
+					disabled: operationBusy || isInstalled,
+					onClick: () => void beginInstall(skill)
+				}, buttonLabel))));
+			})) : null) : null, installState.status === "confirming" ? (0, react.createElement)(ConfirmDialog, {
 				titleId: "dsh-skill-install-confirmation",
 				title: t("confirmInstallTitle"),
 				cancelLabel: t("cancel"),
 				confirmLabel: installState.prepared.collision === "managed" ? t("confirmOverwrite") : t("confirmInstall"),
 				onCancel: () => setInstallState({ status: "idle" }),
-				onConfirm: () => void finishInstall(installState.prepared)
-			}, (0, react.createElement)("strong", null, installState.prepared.name), (0, react.createElement)("p", null, installState.prepared.description), (0, react.createElement)("p", null, installState.prepared.source), (0, react.createElement)("p", null, installState.prepared.collision === "managed" ? t("overwritePrompt") : t("installPrompt"))) : null, installState.status === "installing" ? (0, react.createElement)("p", {
-				className: "dsm-status",
-				role: "status",
-				"aria-live": "polite"
-			}, t("installing")) : null, installState.status === "success" ? (0, react.createElement)("p", {
-				className: "dsm-status",
-				role: "status"
-			}, `${t("installed")} ${installState.skill.name}`) : null, installState.status === "error" ? (0, react.createElement)("p", {
-				className: "dsm-status dsm-error",
-				role: "alert"
-			}, installState.message) : null, (0, react.createElement)("section", {
+				onConfirm: () => void finishInstall(installState.catalogId, installState.prepared)
+			}, (0, react.createElement)("strong", null, installState.prepared.name), (0, react.createElement)("p", null, installState.prepared.description), (0, react.createElement)("p", null, installState.prepared.source), (0, react.createElement)("p", null, installState.prepared.collision === "managed" ? t("overwritePrompt") : t("installPrompt"))) : null, activeTab === "managed" ? (0, react.createElement)("section", {
 				className: "dsm-panel",
-				"aria-labelledby": "dsm-installed-title"
+				id: "dsm-managed-panel",
+				role: "tabpanel",
+				"aria-labelledby": "dsm-managed-tab"
 			}, (0, react.createElement)("h2", { id: "dsm-installed-title" }, t("installedTitle")), inventoryState.status === "loading" ? (0, react.createElement)("p", {
 				className: "dsm-status",
 				role: "status"
@@ -335,50 +445,36 @@ window.__ModuleLoader__.load({
 			}, t("retry"))) : null, inventoryState.status === "ready" && inventoryState.skills.length === 0 ? (0, react.createElement)("p", { className: "dsm-empty" }, t("noInstalled")) : null, inventoryState.status === "ready" && inventoryState.skills.length > 0 ? (0, react.createElement)("ul", {
 				className: "dsm-list",
 				"aria-label": t("installedTitle")
-			}, ...inventoryState.skills.map((skill) => (0, react.createElement)("li", { key: skill.name }, (0, react.createElement)("article", { className: "dsm-card" }, (0, react.createElement)("h3", null, skill.name), (0, react.createElement)("p", { className: "dsm-description" }, skill.description), (0, react.createElement)("p", { className: "dsm-meta" }, skill.source), (0, react.createElement)("span", {
-				className: "dsm-badge",
-				"data-state": skill.state
-			}, t(skill.state === "current" ? "stateCurrent" : skill.state === "locally-modified" ? "stateModified" : skill.state === "missing" ? "stateMissing" : "stateInvalid")), (0, react.createElement)("div", { className: "dsm-actions" }, (0, react.createElement)("a", {
-				className: "dsm-link",
-				href: skill.pageUrl,
-				target: "_blank",
-				rel: "noreferrer"
-			}, t("openPage")), (0, react.createElement)("button", {
-				className: "dsm-button dsm-button-secondary",
-				type: "button",
-				disabled: operationBusy,
-				onClick: () => void checkUpdate(skill.name)
-			}, t("checkUpdate")), (0, react.createElement)("button", {
-				className: "dsm-button dsm-button-danger",
-				type: "button",
-				disabled: operationBusy,
-				onClick: () => void beginRemoval(skill.name)
-			}, t("remove"))))))) : null), updateState.status === "checking" ? (0, react.createElement)("p", {
-				className: "dsm-status",
-				role: "status"
-			}, `${t("checkingUpdate")} ${updateState.name}`) : null, updateState.status === "result" ? (0, react.createElement)("p", {
-				className: "dsm-status",
-				role: "status"
-			}, updateState.update.status === "current" ? t("upToDate") : updateState.update.status === "source-unavailable" ? t("sourceUnavailable") : updateState.update.status === "locally-modified" ? t("stateModified") : t("localInvalid")) : null, updateState.status === "confirming" ? (0, react.createElement)(ConfirmDialog, {
+			}, ...managedSkills.map((skill) => {
+				const updateTargetsSkill = updateState.status !== "idle" && ("name" in updateState ? updateState.name === skill.name : updateState.update.name === skill.name);
+				const removalTargetsSkill = removalState.status !== "idle" && ("name" in removalState ? removalState.name === skill.name : removalState.prepared.name === skill.name);
+				return (0, react.createElement)("li", { key: skill.name }, (0, react.createElement)("article", { className: "dsm-card" }, (0, react.createElement)("h3", null, skill.name), (0, react.createElement)("p", { className: "dsm-description" }, skill.description), (0, react.createElement)("p", { className: "dsm-meta" }, skill.source), (0, react.createElement)("span", {
+					className: "dsm-badge",
+					"data-state": skill.state
+				}, t(skill.state === "current" ? "stateCurrent" : skill.state === "locally-modified" ? "stateModified" : skill.state === "missing" ? "stateMissing" : "stateInvalid")), updateTargetsSkill && updateState.status === "result" ? (0, react.createElement)("p", { className: "dsm-card-feedback" }, updateMessage) : null, updateTargetsSkill && updateState.status === "error" ? (0, react.createElement)("p", { className: "dsm-card-feedback dsm-error" }, updateState.message) : null, updateTargetsSkill && updateState.status === "success" ? (0, react.createElement)("p", { className: "dsm-card-feedback dsm-success" }, t("updated")) : null, removalTargetsSkill && removalState.status === "error" ? (0, react.createElement)("p", { className: "dsm-card-feedback dsm-error" }, removalState.message) : null, (0, react.createElement)("div", { className: "dsm-actions" }, (0, react.createElement)("a", {
+					className: "dsm-link",
+					href: skill.pageUrl,
+					target: "_blank",
+					rel: "noreferrer"
+				}, t("openPage")), (0, react.createElement)("button", {
+					className: "dsm-button dsm-button-secondary",
+					type: "button",
+					disabled: operationBusy,
+					onClick: () => void checkUpdate(skill.name)
+				}, t("checkUpdate")), (0, react.createElement)("button", {
+					className: "dsm-button dsm-button-danger",
+					type: "button",
+					disabled: operationBusy,
+					onClick: () => void beginRemoval(skill.name)
+				}, t("remove")))));
+			})) : null) : null, updateState.status === "confirming" ? (0, react.createElement)(ConfirmDialog, {
 				titleId: "dsh-skill-update-confirmation",
 				title: t("confirmUpdateTitle"),
 				cancelLabel: t("cancel"),
 				confirmLabel: t("confirmUpdate"),
 				onCancel: () => setUpdateState({ status: "idle" }),
 				onConfirm: () => void applyUpdate(updateState.update)
-			}, (0, react.createElement)("strong", null, updateState.update.name), (0, react.createElement)("p", null, updateState.update.status === "locally-modified" ? t("modifiedUpdatePrompt") : updateState.update.status === "local-invalid" ? t("repairUpdatePrompt") : t("updatePrompt"))) : null, updateState.status === "updating" ? (0, react.createElement)("p", {
-				className: "dsm-status",
-				role: "status"
-			}, t("updating")) : null, updateState.status === "success" ? (0, react.createElement)("p", {
-				className: "dsm-status",
-				role: "status"
-			}, `${t("updated")} ${updateState.name}`) : null, updateState.status === "error" ? (0, react.createElement)("p", {
-				className: "dsm-status dsm-error",
-				role: "alert"
-			}, updateState.message) : null, removalState.status === "preparing" ? (0, react.createElement)("p", {
-				className: "dsm-status",
-				role: "status"
-			}, `${t("preparingRemoval")} ${removalState.name}`) : null, removalState.status === "confirming" ? (0, react.createElement)(ConfirmDialog, {
+			}, (0, react.createElement)("strong", null, updateState.update.name), (0, react.createElement)("p", null, updateState.update.status === "locally-modified" ? t("modifiedUpdatePrompt") : updateState.update.status === "local-invalid" ? t("repairUpdatePrompt") : t("updatePrompt"))) : null, removalState.status === "confirming" ? (0, react.createElement)(ConfirmDialog, {
 				titleId: "dsh-skill-removal-confirmation",
 				title: t("confirmRemovalTitle"),
 				cancelLabel: t("cancel"),
@@ -386,16 +482,7 @@ window.__ModuleLoader__.load({
 				danger: true,
 				onCancel: () => setRemovalState({ status: "idle" }),
 				onConfirm: () => void finishRemoval(removalState.prepared)
-			}, (0, react.createElement)("strong", null, removalState.prepared.name), (0, react.createElement)("p", null, removalState.prepared.state === "locally-modified" ? t("modifiedRemovePrompt") : removalState.prepared.state === "current" ? t("removePrompt") : t("invalidRemovePrompt"))) : null, removalState.status === "removing" ? (0, react.createElement)("p", {
-				className: "dsm-status",
-				role: "status"
-			}, t("removing")) : null, removalState.status === "success" ? (0, react.createElement)("p", {
-				className: "dsm-status",
-				role: "status"
-			}, `${t("removed")} ${removalState.name}`) : null, removalState.status === "error" ? (0, react.createElement)("p", {
-				className: "dsm-status dsm-error",
-				role: "alert"
-			}, removalState.message) : null);
+			}, (0, react.createElement)("strong", null, removalState.prepared.name), (0, react.createElement)("p", null, removalState.prepared.state === "locally-modified" ? t("modifiedRemovePrompt") : removalState.prepared.state === "current" ? t("removePrompt") : t("invalidRemovePrompt"))) : null);
 		}
 		//#endregion
 		//#region src/client/locales.ts
@@ -403,6 +490,10 @@ window.__ModuleLoader__.load({
 			nav: "Skill Manager",
 			title: "Skill Manager",
 			introduction: "Browse and manage Skills.sh skills without leaving DSH.",
+			discoverTab: "Discover",
+			managedTab: "Managed Skills",
+			viewManaged: "View Managed Skills",
+			installedBadge: "Installed",
 			searchLabel: "Search Skills.sh",
 			searchPlaceholder: "Try react, testing, or debugging",
 			searchAction: "Search",
@@ -458,6 +549,10 @@ window.__ModuleLoader__.load({
 			nav: "技能管理",
 			title: "技能管理",
 			introduction: "无需离开 DSH，即可浏览和管理 Skills.sh 技能。",
+			discoverTab: "发现技能",
+			managedTab: "托管技能",
+			viewManaged: "查看托管技能",
+			installedBadge: "已安装",
 			searchLabel: "搜索 Skills.sh",
 			searchPlaceholder: "例如 react、测试或调试",
 			searchAction: "搜索",
@@ -524,7 +619,7 @@ window.__ModuleLoader__.load({
 			return isRecord(value.error) && isSearchErrorCode(value.error.code) && typeof value.error.message === "string";
 		}
 		function isSearchErrorCode(value) {
-			return value === "invalid-query" || value === "network" || value === "timeout" || value === "upstream" || value === "invalid-response";
+			return value === "invalid-query" || value === "network" || value === "timeout" || value === "rate-limited" || value === "upstream" || value === "invalid-response";
 		}
 		function isPublicError(value) {
 			return isRecord(value) && typeof value.code === "string" && typeof value.message === "string";
@@ -756,11 +851,14 @@ window.__ModuleLoader__.load({
 		const STYLE_TEXT = `
 .dsm-root{display:grid;gap:28px;padding:8px 4px 28px;color:var(--dsw-alias-label-primary,#171717)}
 .dsm-header{display:grid;gap:8px}.dsm-header h2,.dsm-panel h2{margin:0}.dsm-subtitle{margin:0;color:var(--dsw-alias-label-secondary,#666)}
+.dsm-tabs{display:flex;gap:6px;padding:4px;border-radius:12px;background:var(--dsw-alias-bg-layer-2,#f2f2f2)}.dsm-tab{flex:1;min-height:38px;padding:7px 12px;border:0;border-radius:9px;background:transparent;color:var(--dsw-alias-label-secondary,#666);font:inherit;font-weight:700;cursor:pointer}.dsm-tab[aria-selected="true"]{background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#171717);box-shadow:0 1px 4px rgb(0 0 0/.1)}
+.dsm-notice{position:sticky;z-index:5;top:0;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;box-sizing:border-box;padding:10px 13px;border:1px solid var(--dsw-alias-border-l2,#d8d8d8);border-radius:11px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:0 4px 18px rgb(0 0 0/.12)}.dsm-notice-error{border-color:var(--dsw-alias-state-error-primary,#b82e2e);color:var(--dsw-alias-state-error-primary,#8e2424)}.dsm-notice-success{border-color:var(--dsw-alias-state-success-primary,#27834a)}
 .dsm-panel{display:grid;gap:16px}.dsm-search{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
 .dsm-field{display:grid;gap:7px;flex:1 1 320px;font-weight:600}.dsm-input{box-sizing:border-box;width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--dsw-alias-border-l2,#d8d8d8);border-radius:10px;background:var(--dsw-alias-bg-layer-1,#fff);color:inherit;font:inherit}
 .dsm-button{min-height:36px;padding:7px 13px;border:1px solid transparent;border-radius:9px;font:inherit;font-weight:600;cursor:pointer}.dsm-button:disabled{cursor:not-allowed;opacity:.5}.dsm-button-primary{background:var(--dsw-alias-button-primary-fill,#3b55d9);color:var(--dsw-alias-label-primary-inverted,#fff)}.dsm-button-secondary{border-color:var(--dsw-alias-border-l2,#d8d8d8);background:var(--dsw-alias-bg-layer-2,#f6f6f6);color:inherit}.dsm-button-danger{background:var(--dsw-alias-state-error-primary,#b82e2e);color:var(--dsw-alias-label-primary-inverted,#fff)}
 .dsm-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin:0;padding:0;list-style:none}.dsm-card{display:grid;align-content:start;gap:10px;min-width:0;height:100%;box-sizing:border-box;padding:16px;border:1px solid var(--dsw-alias-border-l2,#dedede);border-radius:14px;background:var(--dsw-alias-bg-layer-1,#fafafa)}.dsm-card h3{margin:0;overflow-wrap:anywhere}.dsm-card p{margin:0;line-height:1.5}.dsm-description{color:var(--dsw-alias-label-secondary,#5f5f5f)}.dsm-meta{font-size:13px;color:var(--dsw-alias-label-tertiary,#707070)}.dsm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:auto;padding-top:4px}.dsm-link{align-content:center;color:var(--dsw-alias-label-primary,#1f1f1f);font-weight:600;text-decoration:underline;text-underline-offset:2px}
 .dsm-status{margin:0;padding:11px 13px;border-radius:10px;background:var(--dsw-alias-bg-layer-2,#f3f5ff)}.dsm-error{border:1px solid var(--dsw-alias-state-error-primary,#d97a7a);color:var(--dsw-alias-state-error-primary,#8e2424)}.dsm-empty{padding:24px;border:1px dashed var(--dsw-alias-border-l2,#ccc);border-radius:12px;text-align:center;color:var(--dsw-alias-label-secondary,#666)}
+.dsm-card-feedback{margin:0;padding:9px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#f3f5ff);font-size:13px}.dsm-card-feedback.dsm-error{background:var(--dsw-alias-bg-layer-2,#fff1f1)}.dsm-success{border:1px solid var(--dsw-alias-state-success-primary,#27834a);color:var(--dsw-alias-state-success-primary,#1d6c3b)}
 .dsm-badge{justify-self:start;padding:3px 8px;border-radius:999px;background:var(--dsw-alias-interactive-bg-active,#e8edff);color:var(--dsw-alias-label-primary,#334bbd);font-size:12px;font-weight:700}.dsm-badge[data-state="locally-modified"],.dsm-badge[data-state="invalid"],.dsm-badge[data-state="missing"]{background:var(--dsw-alias-state-warn-primary,#fff0cd);color:var(--dsw-alias-state-warn-label,#805800)}
 .dsm-dialog-backdrop{position:fixed;z-index:10000;inset:0;display:grid;place-items:center;padding:20px;background:var(--dsw-alias-bg-mask-1,rgb(0 0 0/.45))}.dsm-dialog{display:grid;gap:16px;width:min(460px,100%);max-height:min(680px,calc(100vh - 40px));overflow:auto;box-sizing:border-box;padding:22px;border-radius:16px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#171717);box-shadow:0 20px 60px rgb(0 0 0/.28)}.dsm-dialog h3{margin:0}.dsm-dialog-body{display:grid;gap:10px}.dsm-dialog-body p{margin:0;line-height:1.5}.dsm-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 @media (max-width:640px){.dsm-list{grid-template-columns:1fr}.dsm-search>.dsm-button{width:100%}}

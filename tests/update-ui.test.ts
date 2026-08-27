@@ -44,6 +44,7 @@ function renderUpdate(
     prepareSkillRemoval: async () => { throw new Error('not called') },
     confirmSkillRemoval: async () => { throw new Error('not called') },
   }))
+  fireEvent.click(screen.getByRole('tab', { name: /Managed Skills/ }))
 }
 
 describe('Managed Skill update UI', () => {
@@ -56,7 +57,7 @@ describe('Managed Skill update UI', () => {
     await screen.findByRole('heading', { name: managed.name })
 
     fireEvent.click(screen.getByRole('button', { name: en.checkUpdate }))
-    expect(await screen.findByText(en.sourceUnavailable)).toBeTruthy()
+    expect((await screen.findByRole('status')).textContent).toBe(en.sourceUnavailable)
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 

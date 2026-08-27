@@ -35,6 +35,7 @@ function publicError(error: unknown): {
     'invalid-query': 'Enter a search keyword.',
     network: 'Unable to reach Skills.sh. Check your connection and try again.',
     timeout: 'Skills.sh did not respond in time. Try again.',
+    'rate-limited': error.message,
     upstream: 'Skills.sh could not complete the search. Try again later.',
     'invalid-response': 'Skills.sh returned data the plugin could not safely read.',
   }
@@ -42,6 +43,7 @@ function publicError(error: unknown): {
     'invalid-query': 400,
     network: 502,
     timeout: 504,
+    'rate-limited': 429,
     upstream: 502,
     'invalid-response': 502,
   }
