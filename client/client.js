@@ -9,13 +9,14 @@ window.__ModuleLoader__.load({
 		function formatInstalls(installs) {
 			return new Intl.NumberFormat().format(installs);
 		}
-		function SkillManagerSection({ t, search, prepareInstall, confirmInstall, listManagedSkills }) {
+		function SkillManagerSection({ t, search, prepareInstall, confirmInstall, listManagedSkills, checkSkillUpdate, confirmSkillUpdate }) {
 			const [query, setQuery] = (0, react.useState)("");
 			const [submittedQuery, setSubmittedQuery] = (0, react.useState)("");
 			const [state, setState] = (0, react.useState)({ status: "idle" });
 			const [installState, setInstallState] = (0, react.useState)({ status: "idle" });
 			const [inventoryVersion, setInventoryVersion] = (0, react.useState)(0);
 			const [inventoryState, setInventoryState] = (0, react.useState)({ status: "loading" });
+			const [updateState, setUpdateState] = (0, react.useState)({ status: "idle" });
 			const activeRequest = (0, react.useRef)(null);
 			const activePreparation = (0, react.useRef)(null);
 			(0, react.useEffect)(() => () => {
@@ -108,6 +109,47 @@ window.__ModuleLoader__.load({
 					});
 				}
 			};
+			const checkUpdate = async (name) => {
+				setUpdateState({
+					status: "checking",
+					name
+				});
+				try {
+					const update = await checkSkillUpdate(name);
+					setUpdateState(update.updateAvailable ? {
+						status: "confirming",
+						update
+					} : {
+						status: "result",
+						update
+					});
+				} catch (error) {
+					setUpdateState({
+						status: "error",
+						message: error instanceof Error ? error.message : t("genericError")
+					});
+				}
+			};
+			const applyUpdate = async (update) => {
+				if (update.operationId === void 0) return;
+				setUpdateState({
+					status: "updating",
+					update
+				});
+				try {
+					const skill = await confirmSkillUpdate(update.operationId);
+					setUpdateState({
+						status: "success",
+						name: skill.name
+					});
+					setInventoryVersion((version) => version + 1);
+				} catch (error) {
+					setUpdateState({
+						status: "error",
+						message: error instanceof Error ? error.message : t("genericError")
+					});
+				}
+			};
 			return (0, react.createElement)("section", { "aria-labelledby": "dsh-skill-manager-title" }, (0, react.createElement)("h2", { id: "dsh-skill-manager-title" }, t("title")), (0, react.createElement)("p", null, t("introduction")), (0, react.createElement)("form", { onSubmit: submit }, (0, react.createElement)("label", { htmlFor: "dsh-skill-search" }, t("searchLabel")), (0, react.createElement)("input", {
 				id: "dsh-skill-search",
 				name: "query",
@@ -155,7 +197,21 @@ window.__ModuleLoader__.load({
 				href: skill.pageUrl,
 				target: "_blank",
 				rel: "noreferrer"
-			}, t("openPage")))))) : null);
+			}, t("openPage")), (0, react.createElement)("button", {
+				type: "button",
+				disabled: updateState.status === "checking" || updateState.status === "updating",
+				onClick: () => void checkUpdate(skill.name)
+			}, t("checkUpdate")))))) : null, updateState.status === "checking" ? (0, react.createElement)("p", { role: "status" }, `${t("checkingUpdate")} ${updateState.name}`) : null, updateState.status === "result" ? (0, react.createElement)("p", { role: "status" }, updateState.update.status === "current" ? t("upToDate") : updateState.update.status === "source-unavailable" ? t("sourceUnavailable") : updateState.update.status === "locally-modified" ? t("stateModified") : t("localInvalid")) : null, updateState.status === "confirming" ? (0, react.createElement)("div", {
+				role: "dialog",
+				"aria-modal": "true",
+				"aria-labelledby": "dsh-skill-update-confirmation"
+			}, (0, react.createElement)("h3", { id: "dsh-skill-update-confirmation" }, t("confirmUpdateTitle")), (0, react.createElement)("strong", null, updateState.update.name), (0, react.createElement)("p", null, updateState.update.status === "locally-modified" ? t("modifiedUpdatePrompt") : updateState.update.status === "local-invalid" ? t("repairUpdatePrompt") : t("updatePrompt")), (0, react.createElement)("button", {
+				type: "button",
+				onClick: () => setUpdateState({ status: "idle" })
+			}, t("cancel")), (0, react.createElement)("button", {
+				type: "button",
+				onClick: () => void applyUpdate(updateState.update)
+			}, t("confirmUpdate"))) : null, updateState.status === "updating" ? (0, react.createElement)("p", { role: "status" }, t("updating")) : null, updateState.status === "success" ? (0, react.createElement)("p", { role: "status" }, `${t("updated")} ${updateState.name}`) : null, updateState.status === "error" ? (0, react.createElement)("p", { role: "alert" }, updateState.message) : null);
 		}
 		//#endregion
 		//#region src/client/locales.ts
@@ -189,6 +245,19 @@ window.__ModuleLoader__.load({
 			stateModified: "Locally modified",
 			stateMissing: "Missing from disk",
 			stateInvalid: "Invalid local skill",
+			checkUpdate: "Check for updates",
+			checkingUpdate: "Checking for updates...",
+			upToDate: "This skill is up to date.",
+			updateAvailable: "An update is available.",
+			sourceUnavailable: "The Skills.sh source is no longer available. The local skill has been preserved.",
+			localInvalid: "The local skill is missing or invalid.",
+			confirmUpdateTitle: "Confirm skill update",
+			confirmUpdate: "Update skill",
+			updatePrompt: "Replace the current files with the validated Skills.sh snapshot?",
+			modifiedUpdatePrompt: "This skill has local modifications. Updating will overwrite those changes.",
+			repairUpdatePrompt: "The local skill is missing or invalid. Updating will restore it from Skills.sh.",
+			updating: "Updating skill...",
+			updated: "Skill updated successfully.",
 			retry: "Retry",
 			genericError: "The search failed. Try again."
 		};
@@ -222,6 +291,19 @@ window.__ModuleLoader__.load({
 			stateModified: "本机已修改",
 			stateMissing: "本机文件缺失",
 			stateInvalid: "本机技能无效",
+			checkUpdate: "检查更新",
+			checkingUpdate: "正在检查更新……",
+			upToDate: "这个技能已经是最新版本。",
+			updateAvailable: "发现可用更新。",
+			sourceUnavailable: "Skills.sh 来源已经失效，本机技能仍然保留。",
+			localInvalid: "本机技能缺失或无效。",
+			confirmUpdateTitle: "确认更新技能",
+			confirmUpdate: "更新技能",
+			updatePrompt: "使用已验证的 Skills.sh 快照替换当前文件吗？",
+			modifiedUpdatePrompt: "这个技能包含本机修改，更新会覆盖这些修改。",
+			repairUpdatePrompt: "本机技能缺失或无效，更新会从 Skills.sh 恢复。",
+			updating: "正在更新技能……",
+			updated: "技能更新成功。",
 			retry: "重试",
 			genericError: "搜索失败，请重试。"
 		};
@@ -277,6 +359,15 @@ window.__ModuleLoader__.load({
 		function isInventoryEnvelope(value) {
 			if (!isRecord(value) || typeof value.ok !== "boolean") return false;
 			return value.ok ? Array.isArray(value.skills) && value.skills.every(isManagedSkillInventoryItem) : isPublicError(value.error);
+		}
+		function isUpdateStatus(value) {
+			return value === "current" || value === "available" || value === "locally-modified" || value === "local-invalid" || value === "source-unavailable";
+		}
+		function isUpdateCheckEnvelope(value) {
+			if (!isRecord(value) || typeof value.ok !== "boolean") return false;
+			if (!value.ok) return isPublicError(value.error);
+			if (!isRecord(value.update)) return false;
+			return typeof value.update.name === "string" && isUpdateStatus(value.update.status) && typeof value.update.updateAvailable === "boolean" && (value.update.operationId === void 0 || typeof value.update.operationId === "string") && (value.update.expiresAt === void 0 || typeof value.update.expiresAt === "string");
 		}
 		//#endregion
 		//#region src/client/search-api.ts
@@ -378,6 +469,40 @@ window.__ModuleLoader__.load({
 			return body.skills;
 		}
 		//#endregion
+		//#region src/client/update-api.ts
+		async function post(path, body) {
+			let response;
+			try {
+				response = await fetch(path, {
+					method: "POST",
+					headers: {
+						accept: "application/json",
+						"content-type": "application/json"
+					},
+					body: JSON.stringify(body)
+				});
+			} catch {
+				throw new InstallApiError("network", "Unable to reach the DSH host.");
+			}
+			try {
+				return await response.json();
+			} catch {
+				throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			}
+		}
+		async function checkSkillUpdate(name) {
+			const body = await post("/dsh-skill-manager/api/update/check", { name });
+			if (!isUpdateCheckEnvelope(body)) throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			if (!body.ok) throw new InstallApiError(body.error.code, body.error.message);
+			return body.update;
+		}
+		async function confirmSkillUpdate(operationId) {
+			const body = await post("/dsh-skill-manager/api/update/confirm", { operationId });
+			if (!isConfirmInstallEnvelope(body)) throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			if (!body.ok) throw new InstallApiError(body.error.code, body.error.message);
+			return body.skill;
+		}
+		//#endregion
 		//#region src/client/index.ts
 		const namespace = "dsh-skill-manager";
 		const name = namespace;
@@ -400,7 +525,9 @@ window.__ModuleLoader__.load({
 				search: searchCatalog,
 				prepareInstall,
 				confirmInstall,
-				listManagedSkills
+				listManagedSkills,
+				checkSkillUpdate,
+				confirmSkillUpdate
 			})));
 		}
 		//#endregion

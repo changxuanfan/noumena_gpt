@@ -25,6 +25,8 @@ export type LifecycleErrorCode =
   | 'install-failed'
   | 'rollback-failed'
   | 'unsafe-root'
+  | 'not-managed'
+  | 'state-changed'
 
 export type PublicErrorCode = SearchErrorCode | LifecycleErrorCode
 
@@ -71,6 +73,25 @@ export interface ManagedSkillInventoryItem extends ManagedSkillDocument {
 
 export type InventoryEnvelope =
   | { readonly ok: true; readonly skills: readonly ManagedSkillInventoryItem[] }
+  | { readonly ok: false; readonly error: PublicError }
+
+export type UpdateStatus =
+  | 'current'
+  | 'available'
+  | 'locally-modified'
+  | 'local-invalid'
+  | 'source-unavailable'
+
+export interface UpdateCheckDocument {
+  readonly name: string
+  readonly status: UpdateStatus
+  readonly updateAvailable: boolean
+  readonly operationId?: string
+  readonly expiresAt?: string
+}
+
+export type UpdateCheckEnvelope =
+  | { readonly ok: true; readonly update: UpdateCheckDocument }
   | { readonly ok: false; readonly error: PublicError }
 
 export type PrepareInstallEnvelope =
@@ -168,4 +189,23 @@ export function isInventoryEnvelope(value: unknown): value is InventoryEnvelope 
   return value.ok
     ? Array.isArray(value.skills) && value.skills.every(isManagedSkillInventoryItem)
     : isPublicError(value.error)
+}
+
+function isUpdateStatus(value: unknown): value is UpdateStatus {
+  return value === 'current'
+    || value === 'available'
+    || value === 'locally-modified'
+    || value === 'local-invalid'
+    || value === 'source-unavailable'
+}
+
+export function isUpdateCheckEnvelope(value: unknown): value is UpdateCheckEnvelope {
+  if (!isRecord(value) || typeof value.ok !== 'boolean') return false
+  if (!value.ok) return isPublicError(value.error)
+  if (!isRecord(value.update)) return false
+  return typeof value.update.name === 'string'
+    && isUpdateStatus(value.update.status)
+    && typeof value.update.updateAvailable === 'boolean'
+    && (value.update.operationId === undefined || typeof value.update.operationId === 'string')
+    && (value.update.expiresAt === undefined || typeof value.update.expiresAt === 'string')
 }

@@ -16,6 +16,8 @@ function renderInventory(listManagedSkills: () => Promise<readonly ManagedSkillI
     prepareInstall: async () => { throw new Error('not called') },
     confirmInstall: async () => { throw new Error('not called') },
     listManagedSkills,
+    checkSkillUpdate: async () => { throw new Error('not called') },
+    confirmSkillUpdate: async () => { throw new Error('not called') },
   }))
 }
 

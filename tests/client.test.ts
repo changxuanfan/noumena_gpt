@@ -18,12 +18,20 @@ describe('SkillManagerSection', () => {
       throw new Error('not called')
     }
     const listManagedSkills = async (): Promise<never[]> => []
+    const checkSkillUpdate = async (): Promise<never> => {
+      throw new Error('not called')
+    }
+    const confirmSkillUpdate = async (): Promise<never> => {
+      throw new Error('not called')
+    }
     const markup = renderToStaticMarkup(h(SkillManagerSection, {
       t,
       search,
       prepareInstall,
       confirmInstall,
       listManagedSkills,
+      checkSkillUpdate,
+      confirmSkillUpdate,
     }))
 
     expect(markup).toContain(messages.title)

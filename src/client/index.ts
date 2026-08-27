@@ -4,6 +4,7 @@ import { en, zh, type Translate } from './locales.ts'
 import { searchCatalog } from './search-api.ts'
 import { confirmInstall, prepareInstall } from './install-api.ts'
 import { listManagedSkills } from './inventory-api.ts'
+import { checkSkillUpdate, confirmSkillUpdate } from './update-api.ts'
 
 const namespace = 'dsh-skill-manager'
 
@@ -59,5 +60,7 @@ export function apply(ctx: SkillManagerClientContext): void {
     prepareInstall,
     confirmInstall,
     listManagedSkills,
+    checkSkillUpdate,
+    confirmSkillUpdate,
   })))
 }

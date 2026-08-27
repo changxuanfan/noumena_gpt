@@ -32,6 +32,8 @@ function renderManager(
     prepareInstall,
     confirmInstall,
     listManagedSkills: async () => [],
+    checkSkillUpdate: async () => { throw new Error('not called') },
+    confirmSkillUpdate: async () => { throw new Error('not called') },
   }))
 }
 
