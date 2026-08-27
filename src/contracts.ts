@@ -59,6 +59,20 @@ export interface ManagedSkillDocument {
   readonly updatedAt: string
 }
 
+export type ManagedSkillState =
+  | 'current'
+  | 'locally-modified'
+  | 'missing'
+  | 'invalid'
+
+export interface ManagedSkillInventoryItem extends ManagedSkillDocument {
+  readonly state: ManagedSkillState
+}
+
+export type InventoryEnvelope =
+  | { readonly ok: true; readonly skills: readonly ManagedSkillInventoryItem[] }
+  | { readonly ok: false; readonly error: PublicError }
+
 export type PrepareInstallEnvelope =
   | { readonly ok: true; readonly prepared: PreparedInstallDocument }
   | { readonly ok: false; readonly error: PublicError }
@@ -130,6 +144,15 @@ function isManagedSkill(value: unknown): value is ManagedSkillDocument {
   ].every(key => typeof value[key] === 'string')
 }
 
+function isManagedSkillInventoryItem(value: unknown): value is ManagedSkillInventoryItem {
+  return isManagedSkill(value)
+    && isRecord(value)
+    && (value.state === 'current'
+      || value.state === 'locally-modified'
+      || value.state === 'missing'
+      || value.state === 'invalid')
+}
+
 export function isPrepareInstallEnvelope(value: unknown): value is PrepareInstallEnvelope {
   if (!isRecord(value) || typeof value.ok !== 'boolean') return false
   return value.ok ? isPreparedInstall(value.prepared) : isPublicError(value.error)
@@ -138,4 +161,11 @@ export function isPrepareInstallEnvelope(value: unknown): value is PrepareInstal
 export function isConfirmInstallEnvelope(value: unknown): value is ConfirmInstallEnvelope {
   if (!isRecord(value) || typeof value.ok !== 'boolean') return false
   return value.ok ? isManagedSkill(value.skill) : isPublicError(value.error)
+}
+
+export function isInventoryEnvelope(value: unknown): value is InventoryEnvelope {
+  if (!isRecord(value) || typeof value.ok !== 'boolean') return false
+  return value.ok
+    ? Array.isArray(value.skills) && value.skills.every(isManagedSkillInventoryItem)
+    : isPublicError(value.error)
 }

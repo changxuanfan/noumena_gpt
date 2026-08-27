@@ -16,7 +16,7 @@ async function temporarySkillsRoot(): Promise<{ parent: string; skillsRoot: stri
 
 function snapshot(body = '# Safe'): SkillSnapshot {
   return {
-    hash: 'remote-hash',
+    hash: 'a'.repeat(64),
     files: [
       {
         path: 'SKILL.md',
@@ -97,7 +97,7 @@ describe('InstallService', () => {
     await mkdir(join(skillsRoot, 'constructor'), { recursive: true })
     await writeFile(join(skillsRoot, 'constructor', 'SKILL.md'), 'user-owned')
     const constructorSnapshot: SkillSnapshot = {
-      hash: 'remote-hash',
+      hash: 'a'.repeat(64),
       files: [{
         path: 'SKILL.md',
         contents: '---\nname: constructor\ndescription: Constructor skill\n---\n',

@@ -9,17 +9,41 @@ window.__ModuleLoader__.load({
 		function formatInstalls(installs) {
 			return new Intl.NumberFormat().format(installs);
 		}
-		function SkillManagerSection({ t, search, prepareInstall, confirmInstall }) {
+		function SkillManagerSection({ t, search, prepareInstall, confirmInstall, listManagedSkills }) {
 			const [query, setQuery] = (0, react.useState)("");
 			const [submittedQuery, setSubmittedQuery] = (0, react.useState)("");
 			const [state, setState] = (0, react.useState)({ status: "idle" });
 			const [installState, setInstallState] = (0, react.useState)({ status: "idle" });
+			const [inventoryVersion, setInventoryVersion] = (0, react.useState)(0);
+			const [inventoryState, setInventoryState] = (0, react.useState)({ status: "loading" });
 			const activeRequest = (0, react.useRef)(null);
 			const activePreparation = (0, react.useRef)(null);
 			(0, react.useEffect)(() => () => {
 				activeRequest.current?.abort();
 				activePreparation.current?.abort();
 			}, []);
+			(0, react.useEffect)(() => {
+				let current = true;
+				setInventoryState({ status: "loading" });
+				listManagedSkills().then((skills) => {
+					if (current) setInventoryState({
+						status: "ready",
+						skills
+					});
+				}, (error) => {
+					if (current) setInventoryState({
+						status: "error",
+						message: error instanceof Error ? error.message : t("inventoryError")
+					});
+				});
+				return () => {
+					current = false;
+				};
+			}, [
+				inventoryVersion,
+				listManagedSkills,
+				t
+			]);
 			const runSearch = async (nextQuery) => {
 				const normalizedQuery = nextQuery.trim();
 				if (normalizedQuery.length === 0) return;
@@ -76,6 +100,7 @@ window.__ModuleLoader__.load({
 						status: "success",
 						skill
 					});
+					setInventoryVersion((version) => version + 1);
 				} catch (error) {
 					setInstallState({
 						status: "error",
@@ -123,7 +148,14 @@ window.__ModuleLoader__.load({
 			}, installState.prepared.collision === "managed" ? t("confirmOverwrite") : t("confirmInstall"))) : null, installState.status === "installing" ? (0, react.createElement)("p", {
 				role: "status",
 				"aria-live": "polite"
-			}, t("installing")) : null, installState.status === "success" ? (0, react.createElement)("p", { role: "status" }, `${t("installed")} ${installState.skill.name}`) : null, installState.status === "error" ? (0, react.createElement)("p", { role: "alert" }, installState.message) : null);
+			}, t("installing")) : null, installState.status === "success" ? (0, react.createElement)("p", { role: "status" }, `${t("installed")} ${installState.skill.name}`) : null, installState.status === "error" ? (0, react.createElement)("p", { role: "alert" }, installState.message) : null, (0, react.createElement)("h2", null, t("installedTitle")), inventoryState.status === "loading" ? (0, react.createElement)("p", { role: "status" }, t("loadingInstalled")) : null, inventoryState.status === "error" ? (0, react.createElement)("div", null, (0, react.createElement)("p", { role: "alert" }, inventoryState.message), (0, react.createElement)("button", {
+				type: "button",
+				onClick: () => setInventoryVersion((version) => version + 1)
+			}, t("retry"))) : null, inventoryState.status === "ready" && inventoryState.skills.length === 0 ? (0, react.createElement)("p", null, t("noInstalled")) : null, inventoryState.status === "ready" && inventoryState.skills.length > 0 ? (0, react.createElement)("ul", { "aria-label": t("installedTitle") }, ...inventoryState.skills.map((skill) => (0, react.createElement)("li", { key: skill.name }, (0, react.createElement)("article", null, (0, react.createElement)("h3", null, skill.name), (0, react.createElement)("p", null, skill.description), (0, react.createElement)("p", null, skill.source), (0, react.createElement)("p", null, t(skill.state === "current" ? "stateCurrent" : skill.state === "locally-modified" ? "stateModified" : skill.state === "missing" ? "stateMissing" : "stateInvalid")), (0, react.createElement)("a", {
+				href: skill.pageUrl,
+				target: "_blank",
+				rel: "noreferrer"
+			}, t("openPage")))))) : null);
 		}
 		//#endregion
 		//#region src/client/locales.ts
@@ -149,6 +181,14 @@ window.__ModuleLoader__.load({
 			cancel: "Cancel",
 			installing: "Installing skill...",
 			installed: "Skill installed successfully.",
+			installedTitle: "Managed Skills",
+			loadingInstalled: "Loading Managed Skills...",
+			noInstalled: "No skills are managed by this plugin yet.",
+			inventoryError: "Managed Skills could not be loaded.",
+			stateCurrent: "Current",
+			stateModified: "Locally modified",
+			stateMissing: "Missing from disk",
+			stateInvalid: "Invalid local skill",
 			retry: "Retry",
 			genericError: "The search failed. Try again."
 		};
@@ -174,6 +214,14 @@ window.__ModuleLoader__.load({
 			cancel: "取消",
 			installing: "正在安装技能……",
 			installed: "技能安装成功。",
+			installedTitle: "托管技能",
+			loadingInstalled: "正在加载托管技能……",
+			noInstalled: "这个插件还没有管理任何技能。",
+			inventoryError: "无法加载托管技能。",
+			stateCurrent: "当前版本",
+			stateModified: "本机已修改",
+			stateMissing: "本机文件缺失",
+			stateInvalid: "本机技能无效",
 			retry: "重试",
 			genericError: "搜索失败，请重试。"
 		};
@@ -215,6 +263,9 @@ window.__ModuleLoader__.load({
 				"updatedAt"
 			].every((key) => typeof value[key] === "string");
 		}
+		function isManagedSkillInventoryItem(value) {
+			return isManagedSkill(value) && isRecord(value) && (value.state === "current" || value.state === "locally-modified" || value.state === "missing" || value.state === "invalid");
+		}
 		function isPrepareInstallEnvelope(value) {
 			if (!isRecord(value) || typeof value.ok !== "boolean") return false;
 			return value.ok ? isPreparedInstall(value.prepared) : isPublicError(value.error);
@@ -222,6 +273,10 @@ window.__ModuleLoader__.load({
 		function isConfirmInstallEnvelope(value) {
 			if (!isRecord(value) || typeof value.ok !== "boolean") return false;
 			return value.ok ? isManagedSkill(value.skill) : isPublicError(value.error);
+		}
+		function isInventoryEnvelope(value) {
+			if (!isRecord(value) || typeof value.ok !== "boolean") return false;
+			return value.ok ? Array.isArray(value.skills) && value.skills.every(isManagedSkillInventoryItem) : isPublicError(value.error);
 		}
 		//#endregion
 		//#region src/client/search-api.ts
@@ -304,6 +359,25 @@ window.__ModuleLoader__.load({
 			return body.skill;
 		}
 		//#endregion
+		//#region src/client/inventory-api.ts
+		async function listManagedSkills() {
+			let response;
+			try {
+				response = await fetch("/dsh-skill-manager/api/installed", { headers: { accept: "application/json" } });
+			} catch {
+				throw new InstallApiError("network", "Unable to reach the DSH host.");
+			}
+			let body;
+			try {
+				body = await response.json();
+			} catch {
+				throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			}
+			if (!isInventoryEnvelope(body)) throw new InstallApiError("invalid-response", "The DSH host returned an invalid response.");
+			if (!body.ok) throw new InstallApiError(body.error.code, body.error.message);
+			return body.skills;
+		}
+		//#endregion
 		//#region src/client/index.ts
 		const namespace = "dsh-skill-manager";
 		const name = namespace;
@@ -325,7 +399,8 @@ window.__ModuleLoader__.load({
 				t,
 				search: searchCatalog,
 				prepareInstall,
-				confirmInstall
+				confirmInstall,
+				listManagedSkills
 			})));
 		}
 		//#endregion
