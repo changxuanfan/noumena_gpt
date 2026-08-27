@@ -104,8 +104,26 @@ describe('Skill Manager installation', () => {
 
     expect(await screen.findByText(`${en.installed} safe-skill`)).toBeTruthy()
     expect(confirmInstall).toHaveBeenCalledWith(prepared.operationId, false)
+    const installedButton = screen.getByRole('button', { name: en.installedBadge })
+    expect((installedButton as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: en.viewManaged })).toBeTruthy()
     expect(document.activeElement).toBe(
       screen.getByRole('heading', { name: en.title }),
     )
+  })
+
+  it('shows a preparation failure on the clicked card and in the sticky notice', async () => {
+    const message = 'Skills.sh request limit reached. Try again in about 60 minutes.'
+    await renderResult(
+      async () => { throw new Error(message) },
+      async () => installed,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: en.install }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain(message)
+    const card = screen.getByRole('heading', { name: result.name }).closest('article')
+    expect(card?.textContent).toContain(message)
   })
 })

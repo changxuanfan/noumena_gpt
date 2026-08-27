@@ -1,11 +1,18 @@
 import { parse } from 'yaml'
 import type { CatalogSkill, SearchErrorCode } from '../contracts.ts'
-import type { SkillSnapshot } from '../storage/snapshot.ts'
+import {
+  validateSnapshot,
+  type SkillSnapshot,
+} from '../storage/snapshot.ts'
 
 const DEFAULT_BASE_URL = 'https://skills.sh'
-const DEFAULT_LIMIT = 20
+const DEFAULT_LIMIT = 6
 const DEFAULT_TIMEOUT_MS = 10_000
 const DESCRIPTION_CONCURRENCY = 4
+const SNAPSHOT_CACHE_TTL_MS = 10 * 60 * 1000
+const SNAPSHOT_CACHE_MAX_ENTRIES = 64
+const SNAPSHOT_CACHE_MAX_BYTES = 50 * 1024 * 1024
+const DEFAULT_RATE_LIMIT_SECONDS = 60 * 60
 const SEARCH_RESPONSE_LIMIT_BYTES = 1 * 1024 * 1024
 const SNAPSHOT_RESPONSE_LIMIT_BYTES = 10 * 1024 * 1024
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/g
@@ -20,6 +27,7 @@ export class SkillsShError extends Error {
     readonly code: SearchErrorCode | 'cancelled',
     message: string,
     readonly status?: number,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message)
     this.name = 'SkillsShError'
@@ -204,17 +212,31 @@ export interface SkillsShClientOptions {
   readonly fetcher?: Fetcher
   readonly baseUrl?: string
   readonly timeoutMs?: number
+  readonly now?: () => number
+  readonly snapshotCacheMaxBytes?: number
 }
 
 export class SkillsShClient {
   private readonly fetcher: Fetcher
   private readonly baseUrl: URL
   private readonly timeoutMs: number
+  private readonly now: () => number
+  private readonly snapshotCacheMaxBytes: number
+  private readonly snapshotCache = new Map<string, {
+    readonly snapshot: SkillSnapshot
+    readonly expiresAt: number
+    readonly bytes: number
+  }>()
+  private snapshotCacheBytes = 0
+  private downloadBlockedUntil = 0
 
   constructor(options: SkillsShClientOptions = {}) {
     this.fetcher = options.fetcher ?? fetch
     this.baseUrl = new URL(options.baseUrl ?? DEFAULT_BASE_URL)
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    this.now = options.now ?? Date.now
+    this.snapshotCacheMaxBytes = options.snapshotCacheMaxBytes
+      ?? SNAPSHOT_CACHE_MAX_BYTES
   }
 
   async search(query: string, signal: AbortSignal): Promise<readonly CatalogSkill[]> {
@@ -242,25 +264,47 @@ export class SkillsShClient {
     if (catalogId === null) {
       throw new SkillsShError('invalid-query', 'The catalog skill identifier is invalid.')
     }
-    const encodedId = catalogId.split('/').map(encodeURIComponent).join('/')
-    const snapshot = await this.requestJson(
-      new URL(`/api/download/${encodedId}`, this.baseUrl),
-      signal,
-      SNAPSHOT_RESPONSE_LIMIT_BYTES,
-    )
-    return parseSkillSnapshot(snapshot)
-  }
+    const cached = this.snapshotCache.get(catalogId)
+    if (cached !== undefined) {
+      if (cached.expiresAt > this.now()) {
+        this.snapshotCache.delete(catalogId)
+        this.snapshotCache.set(catalogId, cached)
+        return cloneSnapshot(cached.snapshot)
+      }
+      this.removeCachedSnapshot(catalogId)
+    }
+    if (this.downloadBlockedUntil > this.now()) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((this.downloadBlockedUntil - this.now()) / 1000),
+      )
+      throw rateLimitError(retryAfterSeconds)
+    }
 
-  private async loadDescription(id: string, signal: AbortSignal): Promise<string | null> {
+    const encodedId = catalogId.split('/').map(encodeURIComponent).join('/')
     try {
-      const encodedId = id.split('/').map(encodeURIComponent).join('/')
-      const snapshot = await this.requestJson(
+      const response = await this.requestJson(
         new URL(`/api/download/${encodedId}`, this.baseUrl),
         signal,
         SNAPSHOT_RESPONSE_LIMIT_BYTES,
       )
-      const files = parseSnapshotFiles(snapshot)
-      const skillFile = files.find(file => /(^|\/)skill\.md$/i.test(file.path))
+      const snapshot = parseSkillSnapshot(response)
+      validateSnapshot(snapshot)
+      this.cacheSnapshot(catalogId, snapshot)
+      return cloneSnapshot(snapshot)
+    } catch (error) {
+      if (error instanceof SkillsShError && error.code === 'rate-limited') {
+        this.downloadBlockedUntil = this.now()
+          + (error.retryAfterSeconds ?? DEFAULT_RATE_LIMIT_SECONDS) * 1000
+      }
+      throw error
+    }
+  }
+
+  private async loadDescription(id: string, signal: AbortSignal): Promise<string | null> {
+    try {
+      const snapshot = await this.download(id, signal)
+      const skillFile = snapshot.files.find(file => /(^|\/)skill\.md$/i.test(file.path))
       return skillFile === undefined ? null : descriptionFromSkillMarkdown(skillFile.contents)
     } catch (error) {
       if (error instanceof SkillsShError && error.code === 'cancelled') throw error
@@ -283,6 +327,10 @@ export class SkillsShClient {
         signal: combinedSignal,
       })
       if (!response.ok) {
+        if (response.status === 429) {
+          const retryAfterSeconds = retryAfterFrom(response.headers)
+          throw rateLimitError(retryAfterSeconds)
+        }
         throw new SkillsShError(
           'upstream',
           `Skills.sh request failed with status ${response.status}.`,
@@ -301,4 +349,69 @@ export class SkillsShClient {
       throw new SkillsShError('network', 'Unable to reach Skills.sh.')
     }
   }
+
+  private cacheSnapshot(id: string, snapshot: SkillSnapshot): void {
+    const bytes = snapshotSize(snapshot)
+    this.removeCachedSnapshot(id)
+    if (bytes > this.snapshotCacheMaxBytes) return
+    this.snapshotCache.set(id, {
+      snapshot: cloneSnapshot(snapshot),
+      expiresAt: this.now() + SNAPSHOT_CACHE_TTL_MS,
+      bytes,
+    })
+    this.snapshotCacheBytes += bytes
+    while (this.snapshotCache.size > SNAPSHOT_CACHE_MAX_ENTRIES
+      || this.snapshotCacheBytes > this.snapshotCacheMaxBytes) {
+      const oldest = this.snapshotCache.keys().next().value
+      if (oldest === undefined) break
+      this.removeCachedSnapshot(oldest)
+    }
+  }
+
+  private removeCachedSnapshot(id: string): void {
+    const cached = this.snapshotCache.get(id)
+    if (cached === undefined) return
+    this.snapshotCache.delete(id)
+    this.snapshotCacheBytes -= cached.bytes
+  }
+}
+
+function cloneSnapshot(snapshot: SkillSnapshot): SkillSnapshot {
+  return {
+    hash: snapshot.hash,
+    files: snapshot.files.map(file => ({
+      path: file.path,
+      contents: file.contents,
+    })),
+  }
+}
+
+function snapshotSize(snapshot: SkillSnapshot): number {
+  return Buffer.byteLength(snapshot.hash, 'utf8')
+    + snapshot.files.reduce(
+      (total, file) => total
+        + Buffer.byteLength(file.path, 'utf8')
+        + Buffer.byteLength(file.contents, 'utf8'),
+      0,
+    )
+}
+
+function retryAfterFrom(headers: Headers): number {
+  const value = headers.get('retry-after')
+  if (value === null) return DEFAULT_RATE_LIMIT_SECONDS
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds > 0) return Math.ceil(seconds)
+  const date = Date.parse(value)
+  if (!Number.isFinite(date)) return DEFAULT_RATE_LIMIT_SECONDS
+  return Math.max(1, Math.ceil((date - Date.now()) / 1000))
+}
+
+function rateLimitError(retryAfterSeconds: number): SkillsShError {
+  const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60))
+  return new SkillsShError(
+    'rate-limited',
+    `Skills.sh request limit reached. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+    429,
+    retryAfterSeconds,
+  )
 }

@@ -74,11 +74,11 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   }
 }
 
-function lifecycleError(error: unknown): {
+export function lifecycleError(error: unknown): {
   readonly status: number
   readonly error: PublicError
 } {
-  let code: LifecycleErrorCode
+  let code: PublicError['code']
   let status: number
   let message: string
 
@@ -114,11 +114,20 @@ function lifecycleError(error: unknown): {
     status = 500
     message = 'The Skill Manager state could not be updated safely.'
   } else if (error instanceof SkillsShError) {
-    code = error.code === 'invalid-query' ? 'invalid-request' : 'install-failed'
-    status = error.code === 'invalid-query' ? 400 : 502
-    message = error.code === 'invalid-query'
+    code = error.code === 'invalid-query' ? 'invalid-request'
+      : error.code === 'cancelled' ? 'network'
+        : error.status === 404 ? 'source-unavailable'
+          : error.code
+    status = code === 'invalid-request' ? 400
+      : code === 'rate-limited' ? 429
+        : code === 'source-unavailable' ? 404
+          : code === 'timeout' ? 504
+            : 502
+    message = code === 'invalid-request'
       ? 'The catalog skill identifier is invalid.'
-      : 'Skills.sh could not provide a valid skill snapshot.'
+      : code === 'source-unavailable'
+        ? 'This skill is no longer available on Skills.sh.'
+        : error.message
   } else {
     code = 'install-failed'
     status = 500

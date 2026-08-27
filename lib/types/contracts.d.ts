@@ -6,8 +6,8 @@ export interface CatalogSkill {
     readonly installs: number;
     readonly pageUrl: string;
 }
-export type SearchErrorCode = 'invalid-query' | 'network' | 'timeout' | 'upstream' | 'invalid-response';
-export type LifecycleErrorCode = 'invalid-request' | 'unsafe-path' | 'invalid-skill' | 'resource-limit' | 'operation-expired' | 'overwrite-required' | 'unmanaged-collision' | 'install-failed' | 'rollback-failed' | 'unsafe-root' | 'not-managed' | 'state-changed' | 'remove-failed';
+export type SearchErrorCode = 'invalid-query' | 'network' | 'timeout' | 'rate-limited' | 'upstream' | 'invalid-response';
+export type LifecycleErrorCode = 'invalid-request' | 'unsafe-path' | 'invalid-skill' | 'resource-limit' | 'operation-expired' | 'overwrite-required' | 'unmanaged-collision' | 'install-failed' | 'rollback-failed' | 'unsafe-root' | 'not-managed' | 'state-changed' | 'remove-failed' | 'source-unavailable';
 export type PublicErrorCode = SearchErrorCode | LifecycleErrorCode;
 export interface PublicError<Code extends PublicErrorCode = PublicErrorCode> {
     readonly code: Code;
