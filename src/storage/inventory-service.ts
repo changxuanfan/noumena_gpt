@@ -2,7 +2,7 @@ import { constants } from 'node:fs'
 import { lstat, open, opendir, realpath, type FileHandle } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type { ManagedSkillInventoryItem } from '../contracts.ts'
-import { readManifest } from './manifest.ts'
+import { readManifest, type ManagedSkillRecord } from './manifest.ts'
 import { inspectManagerRoot, safeDirectChild } from './roots.ts'
 import { validateSnapshot, type SnapshotFile } from './snapshot.ts'
 
@@ -106,25 +106,37 @@ async function readBoundedFile(handle: FileHandle): Promise<Buffer> {
   throw new InvalidLocalSkillError('A Managed Skill contains an oversized local file.')
 }
 
-async function localState(
+export interface ManagedSkillInspection {
+  readonly state: ManagedSkillInventoryItem['state']
+  readonly currentHash?: string
+}
+
+export async function inspectManagedSkill(
   skillsRoot: string,
-  name: string,
-  expectedHash: string,
-): Promise<ManagedSkillInventoryItem['state']> {
-  const target = safeDirectChild(skillsRoot, name)
+  record: ManagedSkillRecord,
+): Promise<ManagedSkillInspection> {
+  const target = safeDirectChild(skillsRoot, record.name)
   try {
     const stats = await lstat(target)
-    if (!stats.isDirectory() || stats.isSymbolicLink()) return 'invalid'
+    if (!stats.isDirectory() || stats.isSymbolicLink()) return { state: 'invalid' }
     const physicalTarget = await realpath(target)
     const collection: CollectionState = { files: [], totalBytes: 0, entries: 0 }
     await collectFiles(physicalTarget, physicalTarget, '', collection, 0)
-    const snapshot = validateSnapshot({ hash: expectedHash, files: collection.files })
-    if (snapshot.name !== name) return 'invalid'
-    return snapshot.localHash === expectedHash ? 'current' : 'locally-modified'
+    const snapshot = validateSnapshot({
+      hash: record.remoteHash,
+      files: collection.files,
+    })
+    if (snapshot.name !== record.name) return { state: 'invalid' }
+    return {
+      state: snapshot.localHash === record.localHash ? 'current' : 'locally-modified',
+      currentHash: snapshot.localHash,
+    }
   } catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') return 'missing'
-    if (error instanceof InvalidLocalSkillError) return 'invalid'
-    if (error instanceof Error && error.name === 'SnapshotValidationError') return 'invalid'
+    if (isNodeError(error) && error.code === 'ENOENT') return { state: 'missing' }
+    if (error instanceof InvalidLocalSkillError) return { state: 'invalid' }
+    if (error instanceof Error && error.name === 'SnapshotValidationError') {
+      return { state: 'invalid' }
+    }
     throw error
   }
 }
@@ -137,9 +149,10 @@ export class InventoryService {
     const manifest = await readManifest(managerRoot)
     const items: ManagedSkillInventoryItem[] = []
     for (const record of Object.values(manifest.skills)) {
+      const inspection = await inspectManagedSkill(this.skillsRoot, record)
       items.push({
         ...record,
-        state: await localState(this.skillsRoot, record.name, record.localHash),
+        state: inspection.state,
       })
     }
     return items.sort((left, right) => left.name.localeCompare(right.name))

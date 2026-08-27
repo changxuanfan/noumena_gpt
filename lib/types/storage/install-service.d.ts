@@ -1,5 +1,6 @@
-import { type ManagedSkillRecord } from './manifest.ts';
+import { writeManifestAtomic, type ManagedSkillRecord } from './manifest.ts';
 import { type SkillSnapshot } from './snapshot.ts';
+import type { UpdateCheckDocument } from '../contracts.ts';
 export interface SnapshotCatalog {
     download(id: string, signal: AbortSignal): Promise<SkillSnapshot>;
 }
@@ -18,8 +19,8 @@ export interface ConfirmInstall {
     readonly overwrite: boolean;
 }
 export declare class InstallError extends Error {
-    readonly code: 'operation-expired' | 'overwrite-required' | 'unmanaged-collision' | 'install-failed' | 'rollback-failed' | 'unsafe-root';
-    constructor(code: 'operation-expired' | 'overwrite-required' | 'unmanaged-collision' | 'install-failed' | 'rollback-failed' | 'unsafe-root', message: string, options?: ErrorOptions);
+    readonly code: 'operation-expired' | 'overwrite-required' | 'unmanaged-collision' | 'install-failed' | 'rollback-failed' | 'unsafe-root' | 'not-managed' | 'state-changed';
+    constructor(code: 'operation-expired' | 'overwrite-required' | 'unmanaged-collision' | 'install-failed' | 'rollback-failed' | 'unsafe-root' | 'not-managed' | 'state-changed', message: string, options?: ErrorOptions);
 }
 export interface InstallServiceOptions {
     readonly skillsRoot: string;
@@ -28,6 +29,7 @@ export interface InstallServiceOptions {
     readonly operationTtlMs?: number;
     readonly maxPendingOperations?: number;
     readonly warn?: (message: string, error: unknown) => void;
+    readonly writeManifest?: typeof writeManifestAtomic;
 }
 export declare class InstallService {
     private readonly skillsRoot;
@@ -36,15 +38,21 @@ export declare class InstallService {
     private readonly operationTtlMs;
     private readonly maxPendingOperations;
     private readonly warn;
+    private readonly writeManifest;
     private readonly operations;
     private inFlightPreparations;
     private activeCommits;
     private writeTail;
     constructor(options: InstallServiceOptions);
     prepare(id: string, signal: AbortSignal): Promise<PreparedInstall>;
+    checkUpdate(name: string, signal: AbortSignal): Promise<UpdateCheckDocument>;
     confirm(input: ConfirmInstall): Promise<ManagedSkillRecord>;
     private enqueue;
     private pruneExpiredOperations;
+    private assertOperationCapacity;
+    private withPreparationSlot;
+    private downloadValidatedSnapshot;
+    private storeOperation;
     private collisionFor;
     private commitInstall;
 }

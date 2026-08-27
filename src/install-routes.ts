@@ -8,6 +8,7 @@ import type {
   LifecycleErrorCode,
   PrepareInstallEnvelope,
   PublicError,
+  UpdateCheckEnvelope,
 } from './contracts.ts'
 import { SkillsShError } from './skills-sh/client.ts'
 import { InstallError, type InstallService } from './storage/install-service.ts'
@@ -91,8 +92,11 @@ function lifecycleError(error: unknown): {
     message = error.message
   } else if (error instanceof InstallError) {
     code = error.code
-    status = error.code === 'operation-expired' ? 410
-      : error.code === 'overwrite-required' || error.code === 'unmanaged-collision' ? 409
+    status = error.code === 'not-managed' ? 404
+      : error.code === 'operation-expired' ? 410
+      : error.code === 'overwrite-required'
+        || error.code === 'unmanaged-collision'
+        || error.code === 'state-changed' ? 409
         : 500
     message = error.message
   } else if (error instanceof ManifestError) {
@@ -116,7 +120,7 @@ function lifecycleError(error: unknown): {
 function writeJson(
   response: ServerResponse,
   status: number,
-  body: PrepareInstallEnvelope | ConfirmInstallEnvelope,
+  body: PrepareInstallEnvelope | ConfirmInstallEnvelope | UpdateCheckEnvelope,
 ): void {
   response.statusCode = status
   response.setHeader('content-type', 'application/json; charset=utf-8')
@@ -188,7 +192,50 @@ export function mountInstallRoutes(
     },
   })
 
+  const disposeUpdateCheck = webServer.register({
+    kind: 'exact',
+    path: '/dsh-skill-manager/api/update/check',
+    async handler(request, response) {
+      if (!assertPost(request, response)) return
+      try {
+        const body = await readJsonBody(request)
+        if (!isRecord(body) || typeof body.name !== 'string') {
+          throw new RequestError('A Managed Skill name is required.')
+        }
+        const update = await service.checkUpdate(body.name, new AbortController().signal)
+        writeJson(response, 200, { ok: true, update })
+      } catch (error) {
+        const failure = lifecycleError(error)
+        writeJson(response, failure.status, { ok: false, error: failure.error })
+      }
+    },
+  })
+
+  const disposeUpdateConfirm = webServer.register({
+    kind: 'exact',
+    path: '/dsh-skill-manager/api/update/confirm',
+    async handler(request, response) {
+      if (!assertPost(request, response)) return
+      try {
+        const body = await readJsonBody(request)
+        if (!isRecord(body) || typeof body.operationId !== 'string') {
+          throw new RequestError('A prepared update operation is required.')
+        }
+        const skill = await service.confirm({
+          operationId: body.operationId,
+          overwrite: true,
+        })
+        writeJson(response, 200, { ok: true, skill })
+      } catch (error) {
+        const failure = lifecycleError(error)
+        writeJson(response, failure.status, { ok: false, error: failure.error })
+      }
+    },
+  })
+
   return () => {
+    disposeUpdateConfirm()
+    disposeUpdateCheck()
     disposeConfirm()
     disposePrepare()
   }

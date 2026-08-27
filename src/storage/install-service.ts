@@ -13,6 +13,7 @@ import {
   type ManagedSkillRecord,
   type SkillManifest,
 } from './manifest.ts'
+import { inspectManagedSkill } from './inventory-service.ts'
 import {
   ensureSafeRoots,
   inspectManagerRoot,
@@ -25,6 +26,7 @@ import {
   type SkillSnapshot,
   type ValidatedSnapshot,
 } from './snapshot.ts'
+import type { UpdateCheckDocument } from '../contracts.ts'
 
 const DEFAULT_OPERATION_TTL_MS = 5 * 60 * 1000
 const MAX_PREPARED_OPERATIONS = 64
@@ -58,7 +60,9 @@ export class InstallError extends Error {
       | 'unmanaged-collision'
       | 'install-failed'
       | 'rollback-failed'
-      | 'unsafe-root',
+      | 'unsafe-root'
+      | 'not-managed'
+      | 'state-changed',
     message: string,
     options?: ErrorOptions,
   ) {
@@ -72,6 +76,10 @@ interface PreparedRecord {
   readonly snapshot: ValidatedSnapshot
   readonly expiresAt: number
   readonly expiryTimer: NodeJS.Timeout
+  readonly baseline?: {
+    readonly record: ManagedSkillRecord
+    readonly currentHash: string
+  }
 }
 
 export interface InstallServiceOptions {
@@ -81,6 +89,7 @@ export interface InstallServiceOptions {
   readonly operationTtlMs?: number
   readonly maxPendingOperations?: number
   readonly warn?: (message: string, error: unknown) => void
+  readonly writeManifest?: typeof writeManifestAtomic
 }
 
 export class InstallService {
@@ -90,6 +99,7 @@ export class InstallService {
   private readonly operationTtlMs: number
   private readonly maxPendingOperations: number
   private readonly warn: (message: string, error: unknown) => void
+  private readonly writeManifest: typeof writeManifestAtomic
   private readonly operations = new Map<string, PreparedRecord>()
   private inFlightPreparations = 0
   private activeCommits = 0
@@ -102,21 +112,13 @@ export class InstallService {
     this.operationTtlMs = options.operationTtlMs ?? DEFAULT_OPERATION_TTL_MS
     this.maxPendingOperations = options.maxPendingOperations ?? MAX_PREPARED_OPERATIONS
     this.warn = options.warn ?? ((message, error) => console.warn(message, error))
+    this.writeManifest = options.writeManifest ?? writeManifestAtomic
   }
 
   async prepare(id: string, signal: AbortSignal): Promise<PreparedInstall> {
     this.pruneExpiredOperations()
-    if (this.operations.size + this.inFlightPreparations + this.activeCommits
-      >= this.maxPendingOperations) {
-      throw new InstallError(
-        'install-failed',
-        'Too many installations are awaiting confirmation. Try again shortly.',
-      )
-    }
-
-    this.inFlightPreparations += 1
-    try {
-      const snapshot = validateSnapshot(await this.catalog.download(id, signal))
+    return this.withPreparationSlot(async () => {
+      const snapshot = await this.downloadValidatedSnapshot(id, signal)
       const managerRoot = await inspectManagerRoot(this.skillsRoot)
       const manifest = await readManifest(managerRoot)
       const collision = await this.collisionFor(snapshot.name, manifest)
@@ -127,13 +129,7 @@ export class InstallService {
         )
       }
 
-      const operationId = randomUUID()
-      const expiresAt = this.now().getTime() + this.operationTtlMs
-      const expiryTimer = setTimeout(() => {
-        this.operations.delete(operationId)
-      }, this.operationTtlMs)
-      expiryTimer.unref()
-      this.operations.set(operationId, { id, snapshot, expiresAt, expiryTimer })
+      const { operationId, expiresAt } = this.storeOperation(id, snapshot)
       return {
         operationId,
         name: snapshot.name,
@@ -143,9 +139,62 @@ export class InstallService {
         collision,
         expiresAt: new Date(expiresAt).toISOString(),
       }
-    } finally {
-      this.inFlightPreparations -= 1
-    }
+    })
+  }
+
+  async checkUpdate(name: string, signal: AbortSignal): Promise<UpdateCheckDocument> {
+    this.pruneExpiredOperations()
+    return this.withPreparationSlot(async () => {
+      const managerRoot = await inspectManagerRoot(this.skillsRoot)
+      const manifest = await readManifest(managerRoot)
+      const record = Object.hasOwn(manifest.skills, name) ? manifest.skills[name] : undefined
+      if (record === undefined) {
+        throw new InstallError('not-managed', 'The requested skill is not managed by this plugin.')
+      }
+      const local = await inspectManagedSkill(this.skillsRoot, record)
+
+      let snapshot: ValidatedSnapshot
+      try {
+        snapshot = await this.downloadValidatedSnapshot(record.catalogId, signal)
+      } catch (error) {
+        if (hasStatus(error, 404)) {
+          return { name, status: 'source-unavailable', updateAvailable: false }
+        }
+        throw error
+      }
+      if (snapshot.name !== name) {
+        throw new SnapshotValidationError(
+          'invalid-skill',
+          'The updated snapshot no longer matches the Managed Skill name.',
+        )
+      }
+
+      const localStatus = local.state === 'current'
+        ? 'current'
+        : local.state === 'locally-modified'
+          ? 'locally-modified'
+          : 'local-invalid'
+      if (snapshot.remoteHash === record.remoteHash || local.currentHash === undefined) {
+        return { name, status: localStatus, updateAvailable: false }
+      }
+
+      const baseline = {
+        record,
+        currentHash: local.currentHash,
+      }
+      const { operationId, expiresAt } = this.storeOperation(
+        record.catalogId,
+        snapshot,
+        baseline,
+      )
+      return {
+        name,
+        status: localStatus === 'current' ? 'available' : localStatus,
+        updateAvailable: true,
+        operationId,
+        expiresAt: new Date(expiresAt).toISOString(),
+      }
+    })
   }
 
   confirm(input: ConfirmInstall): Promise<ManagedSkillRecord> {
@@ -181,6 +230,54 @@ export class InstallService {
     }
   }
 
+  private assertOperationCapacity(): void {
+    if (this.operations.size + this.inFlightPreparations + this.activeCommits
+      >= this.maxPendingOperations) {
+      throw new InstallError(
+        'install-failed',
+        'Too many skill operations are awaiting confirmation. Try again shortly.',
+      )
+    }
+  }
+
+  private async withPreparationSlot<T>(operation: () => Promise<T>): Promise<T> {
+    this.assertOperationCapacity()
+    this.inFlightPreparations += 1
+    try {
+      return await operation()
+    } finally {
+      this.inFlightPreparations -= 1
+    }
+  }
+
+  private async downloadValidatedSnapshot(
+    id: string,
+    signal: AbortSignal,
+  ): Promise<ValidatedSnapshot> {
+    return validateSnapshot(await this.catalog.download(id, signal))
+  }
+
+  private storeOperation(
+    id: string,
+    snapshot: ValidatedSnapshot,
+    baseline?: PreparedRecord['baseline'],
+  ): { readonly operationId: string; readonly expiresAt: number } {
+    const operationId = randomUUID()
+    const expiresAt = this.now().getTime() + this.operationTtlMs
+    const expiryTimer = setTimeout(() => {
+      this.operations.delete(operationId)
+    }, this.operationTtlMs)
+    expiryTimer.unref()
+    this.operations.set(operationId, {
+      id,
+      snapshot,
+      expiresAt,
+      expiryTimer,
+      baseline,
+    })
+    return { operationId, expiresAt }
+  }
+
   private async collisionFor(
     name: string,
     manifest: SkillManifest,
@@ -211,6 +308,25 @@ export class InstallService {
     }
 
     const manifest = await readManifest(roots.managerRoot)
+    if (operation.baseline !== undefined) {
+      const baselineRecord = Object.hasOwn(manifest.skills, operation.snapshot.name)
+        ? manifest.skills[operation.snapshot.name]
+        : undefined
+      if (baselineRecord === undefined
+        || !sameManagedRecord(baselineRecord, operation.baseline.record)) {
+        throw new InstallError(
+          'state-changed',
+          'The Managed Skill changed after the update check. Check again.',
+        )
+      }
+      const current = await inspectManagedSkill(roots.skillsRoot, baselineRecord)
+      if (current.currentHash !== operation.baseline.currentHash) {
+        throw new InstallError(
+          'state-changed',
+          'The Managed Skill changed after the update check. Check again.',
+        )
+      }
+    }
     const collision = await this.collisionFor(operation.snapshot.name, manifest)
     if (collision === 'unmanaged') {
       throw new InstallError(
@@ -256,7 +372,7 @@ export class InstallService {
         installedAt: previous?.installedAt ?? timestamp,
         updatedAt: timestamp,
       }
-      await writeManifestAtomic(roots.managerRoot, {
+      await this.writeManifest(roots.managerRoot, {
         version: 1,
         skills: { ...manifest.skills, [record.name]: record },
       })
@@ -347,4 +463,25 @@ function pageUrlFromCatalogId(id: string): string {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error
+}
+
+function hasStatus(error: unknown, status: number): boolean {
+  return error instanceof Error
+    && 'status' in error
+    && error.status === status
+}
+
+function sameManagedRecord(
+  left: ManagedSkillRecord,
+  right: ManagedSkillRecord,
+): boolean {
+  return left.name === right.name
+    && left.description === right.description
+    && left.catalogId === right.catalogId
+    && left.source === right.source
+    && left.pageUrl === right.pageUrl
+    && left.remoteHash === right.remoteHash
+    && left.localHash === right.localHash
+    && left.installedAt === right.installedAt
+    && left.updatedAt === right.updatedAt
 }

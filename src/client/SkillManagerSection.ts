@@ -11,6 +11,7 @@ import type {
   ManagedSkillDocument,
   ManagedSkillInventoryItem,
   PreparedInstallDocument,
+  UpdateCheckDocument,
 } from '../contracts.ts'
 import type { Translate } from './locales.ts'
 
@@ -29,6 +30,8 @@ export interface SkillManagerSectionProps {
     overwrite: boolean,
   ) => Promise<ManagedSkillDocument>
   readonly listManagedSkills: () => Promise<readonly ManagedSkillInventoryItem[]>
+  readonly checkSkillUpdate: (name: string) => Promise<UpdateCheckDocument>
+  readonly confirmSkillUpdate: (operationId: string) => Promise<ManagedSkillDocument>
 }
 
 type SearchState =
@@ -50,6 +53,15 @@ type InventoryState =
   | { readonly status: 'ready'; readonly skills: readonly ManagedSkillInventoryItem[] }
   | { readonly status: 'error'; readonly message: string }
 
+type UpdateState =
+  | { readonly status: 'idle' }
+  | { readonly status: 'checking'; readonly name: string }
+  | { readonly status: 'result'; readonly update: UpdateCheckDocument }
+  | { readonly status: 'confirming'; readonly update: UpdateCheckDocument }
+  | { readonly status: 'updating'; readonly update: UpdateCheckDocument }
+  | { readonly status: 'success'; readonly name: string }
+  | { readonly status: 'error'; readonly message: string }
+
 function formatInstalls(installs: number): string {
   return new Intl.NumberFormat().format(installs)
 }
@@ -60,6 +72,8 @@ export function SkillManagerSection({
   prepareInstall,
   confirmInstall,
   listManagedSkills,
+  checkSkillUpdate,
+  confirmSkillUpdate,
 }: SkillManagerSectionProps): ReactNode {
   const [query, setQuery] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
@@ -67,6 +81,7 @@ export function SkillManagerSection({
   const [installState, setInstallState] = useState<InstallState>({ status: 'idle' })
   const [inventoryVersion, setInventoryVersion] = useState(0)
   const [inventoryState, setInventoryState] = useState<InventoryState>({ status: 'loading' })
+  const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' })
   const activeRequest = useRef<AbortController | null>(null)
   const activePreparation = useRef<AbortController | null>(null)
 
@@ -153,6 +168,36 @@ export function SkillManagerSection({
       setInventoryVersion(version => version + 1)
     } catch (error) {
       setInstallState({
+        status: 'error',
+        message: error instanceof Error ? error.message : t('genericError'),
+      })
+    }
+  }
+
+  const checkUpdate = async (name: string): Promise<void> => {
+    setUpdateState({ status: 'checking', name })
+    try {
+      const update = await checkSkillUpdate(name)
+      setUpdateState(update.updateAvailable
+        ? { status: 'confirming', update }
+        : { status: 'result', update })
+    } catch (error) {
+      setUpdateState({
+        status: 'error',
+        message: error instanceof Error ? error.message : t('genericError'),
+      })
+    }
+  }
+
+  const applyUpdate = async (update: UpdateCheckDocument): Promise<void> => {
+    if (update.operationId === undefined) return
+    setUpdateState({ status: 'updating', update })
+    try {
+      const skill = await confirmSkillUpdate(update.operationId)
+      setUpdateState({ status: 'success', name: skill.name })
+      setInventoryVersion(version => version + 1)
+    } catch (error) {
+      setUpdateState({
         status: 'error',
         message: error instanceof Error ? error.message : t('genericError'),
       })
@@ -305,9 +350,62 @@ export function SkillManagerSection({
                 target: '_blank',
                 rel: 'noreferrer',
               }, t('openPage')),
+              h('button', {
+                type: 'button',
+                disabled: updateState.status === 'checking'
+                  || updateState.status === 'updating',
+                onClick: () => void checkUpdate(skill.name),
+              }, t('checkUpdate')),
             ),
           )),
         )
+      : null,
+    updateState.status === 'checking'
+      ? h('p', { role: 'status' }, `${t('checkingUpdate')} ${updateState.name}`)
+      : null,
+    updateState.status === 'result'
+      ? h('p', { role: 'status' },
+          updateState.update.status === 'current'
+            ? t('upToDate')
+            : updateState.update.status === 'source-unavailable'
+              ? t('sourceUnavailable')
+              : updateState.update.status === 'locally-modified'
+                ? t('stateModified')
+                : t('localInvalid'))
+      : null,
+    updateState.status === 'confirming'
+      ? h(
+          'div',
+          {
+            role: 'dialog',
+            'aria-modal': 'true',
+            'aria-labelledby': 'dsh-skill-update-confirmation',
+          },
+          h('h3', { id: 'dsh-skill-update-confirmation' }, t('confirmUpdateTitle')),
+          h('strong', null, updateState.update.name),
+          h('p', null, updateState.update.status === 'locally-modified'
+            ? t('modifiedUpdatePrompt')
+            : updateState.update.status === 'local-invalid'
+              ? t('repairUpdatePrompt')
+              : t('updatePrompt')),
+          h('button', {
+            type: 'button',
+            onClick: () => setUpdateState({ status: 'idle' }),
+          }, t('cancel')),
+          h('button', {
+            type: 'button',
+            onClick: () => void applyUpdate(updateState.update),
+          }, t('confirmUpdate')),
+        )
+      : null,
+    updateState.status === 'updating'
+      ? h('p', { role: 'status' }, t('updating'))
+      : null,
+    updateState.status === 'success'
+      ? h('p', { role: 'status' }, `${t('updated')} ${updateState.name}`)
+      : null,
+    updateState.status === 'error'
+      ? h('p', { role: 'alert' }, updateState.message)
       : null,
   )
 }

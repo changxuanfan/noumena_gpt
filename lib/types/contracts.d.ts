@@ -7,7 +7,7 @@ export interface CatalogSkill {
     readonly pageUrl: string;
 }
 export type SearchErrorCode = 'invalid-query' | 'network' | 'timeout' | 'upstream' | 'invalid-response';
-export type LifecycleErrorCode = 'invalid-request' | 'unsafe-path' | 'invalid-skill' | 'resource-limit' | 'operation-expired' | 'overwrite-required' | 'unmanaged-collision' | 'install-failed' | 'rollback-failed' | 'unsafe-root';
+export type LifecycleErrorCode = 'invalid-request' | 'unsafe-path' | 'invalid-skill' | 'resource-limit' | 'operation-expired' | 'overwrite-required' | 'unmanaged-collision' | 'install-failed' | 'rollback-failed' | 'unsafe-root' | 'not-managed' | 'state-changed';
 export type PublicErrorCode = SearchErrorCode | LifecycleErrorCode;
 export interface PublicError<Code extends PublicErrorCode = PublicErrorCode> {
     readonly code: Code;
@@ -51,6 +51,21 @@ export type InventoryEnvelope = {
     readonly ok: false;
     readonly error: PublicError;
 };
+export type UpdateStatus = 'current' | 'available' | 'locally-modified' | 'local-invalid' | 'source-unavailable';
+export interface UpdateCheckDocument {
+    readonly name: string;
+    readonly status: UpdateStatus;
+    readonly updateAvailable: boolean;
+    readonly operationId?: string;
+    readonly expiresAt?: string;
+}
+export type UpdateCheckEnvelope = {
+    readonly ok: true;
+    readonly update: UpdateCheckDocument;
+} | {
+    readonly ok: false;
+    readonly error: PublicError;
+};
 export type PrepareInstallEnvelope = {
     readonly ok: true;
     readonly prepared: PreparedInstallDocument;
@@ -70,3 +85,4 @@ export declare function isSearchEnvelope(value: unknown): value is SearchEnvelop
 export declare function isPrepareInstallEnvelope(value: unknown): value is PrepareInstallEnvelope;
 export declare function isConfirmInstallEnvelope(value: unknown): value is ConfirmInstallEnvelope;
 export declare function isInventoryEnvelope(value: unknown): value is InventoryEnvelope;
+export declare function isUpdateCheckEnvelope(value: unknown): value is UpdateCheckEnvelope;
