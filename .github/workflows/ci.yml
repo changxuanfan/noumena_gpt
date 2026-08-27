@@ -32,4 +32,3 @@ jobs:
       - name: Await package scaffold
         if: ${{ hashFiles('package-lock.json') == '' }}
         run: echo "Repository workflow is configured; package validation begins with the scaffold."
-

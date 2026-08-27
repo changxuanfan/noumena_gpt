@@ -9,4 +9,3 @@
 | `wontfix` | `wontfix` | The work will not be actioned |
 
 When a skill names a canonical role, use its repository label from this table.
-

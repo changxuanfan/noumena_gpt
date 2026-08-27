@@ -29,4 +29,3 @@ _Avoid_: Workspace, install directory
 The state where Skills.sh explicitly no longer provides a Managed Skill's
 source. It does not imply that the local skill should be removed.
 _Avoid_: Network error, missing skill
-

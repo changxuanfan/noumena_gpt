@@ -27,4 +27,3 @@ labels.
 Use GitHub native issue dependencies when available. If the repository cannot
 create a native dependency, add `Blocked by: #<number>` to the dependent issue
 and treat every referenced open issue as a live blocker.
-

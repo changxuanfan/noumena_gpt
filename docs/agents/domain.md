@@ -19,4 +19,3 @@ and documentation. If a required concept is missing, reconsider whether it is
 new terminology or record the gap for domain modeling.
 
 Surface any conflict with an existing ADR instead of silently overriding it.
-

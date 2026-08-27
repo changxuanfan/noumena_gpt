@@ -13,4 +13,3 @@ This repository follows the workflow required by the assignment:
 The project uses GitHub Copilot CLI runtime in VS Code. Every pull request
 records the actual model, AI-assisted work, test evidence, and consequential
 human decisions.
-

@@ -6,4 +6,3 @@ to the required source, gives the Web UI stable typed errors, and lets the
 plugin enforce that every filesystem mutation stays within the DSH Skills
 Root; the adapter isolates the risk that Skills.sh's currently public API may
 change.
-

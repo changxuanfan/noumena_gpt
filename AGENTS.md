@@ -13,4 +13,3 @@ The repository uses Matt Pocock Skills' default five-role triage vocabulary. See
 ### Domain docs
 
 This is a single-context repository with a root `CONTEXT.md` and system decisions under `docs/adr/`. See `docs/agents/domain.md`.
-
