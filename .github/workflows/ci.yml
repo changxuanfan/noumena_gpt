@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate workflow artifacts
+        run: |
+          test -f AGENTS.md
+          test -f CONTEXT.md
+          test -f docs/agents/issue-tracker.md
+          test -f docs/specification.md
+          test -f skills-lock.json
+          test -f .agents/skills/ask-matt/SKILL.md
+          test -f .agents/skills/setup-matt-pocock-skills/SKILL.md
