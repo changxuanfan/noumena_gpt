@@ -17,6 +17,7 @@
   "files": [
     "client",
     "lib",
+    "scripts/smoke.mjs",
     "cordis.patch.yml",
     "LICENSE",
     "README.md"
@@ -27,6 +28,7 @@
     "build:client": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
     "test": "vitest run",
+    "smoke": "node scripts/smoke.mjs",
     "check:generated": "npm run build && git diff --exit-code -- client lib",
     "check": "npm run typecheck && npm test && npm run check:generated"
   },
