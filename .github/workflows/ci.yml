@@ -18,17 +18,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-        if: ${{ hashFiles('package-lock.json') != '' }}
-      - name: Validate package
-        if: ${{ hashFiles('package-lock.json') != '' }}
+      - name: Validate workflow artifacts
         run: |
-          npm ci
-          npm run check
-          npm pack --dry-run
-      - name: Await package scaffold
-        if: ${{ hashFiles('package-lock.json') == '' }}
-        run: echo "Repository workflow is configured; package validation begins with the scaffold."
+          test -f AGENTS.md
+          test -f CONTEXT.md
+          test -f docs/agents/issue-tracker.md
+          test -f docs/specification.md
+          test -f skills-lock.json
+          test -f .agents/skills/ask-matt/SKILL.md
+          test -f .agents/skills/setup-matt-pocock-skills/SKILL.md
