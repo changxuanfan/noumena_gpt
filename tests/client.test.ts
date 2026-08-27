@@ -17,11 +17,13 @@ describe('SkillManagerSection', () => {
     const confirmInstall = async (): Promise<never> => {
       throw new Error('not called')
     }
+    const listManagedSkills = async (): Promise<never[]> => []
     const markup = renderToStaticMarkup(h(SkillManagerSection, {
       t,
       search,
       prepareInstall,
       confirmInstall,
+      listManagedSkills,
     }))
 
     expect(markup).toContain(messages.title)

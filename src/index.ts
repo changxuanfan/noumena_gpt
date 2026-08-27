@@ -1,9 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import { mountInstallRoutes } from './install-routes.ts'
+import { mountInventoryRoute } from './inventory-route.ts'
 import { mountSearchRoute } from './search-route.ts'
 import { SkillsShClient } from './skills-sh/client.ts'
 import { InstallService } from './storage/install-service.ts'
+import { InventoryService } from './storage/inventory-service.ts'
 import { defaultSkillsRoot } from './storage/roots.ts'
 
 export const name = 'dsh-skill-manager'
@@ -59,10 +61,13 @@ export function apply(ctx: Context): void {
           skillsRoot: defaultSkillsRoot(),
           catalog: skillsSh,
         })
+        const inventoryService = new InventoryService(defaultSkillsRoot())
         const disposeHealth = mountHealthRoute(host.webServer)
         const disposeSearch = mountSearchRoute(host.webServer, skillsSh)
         const disposeInstall = mountInstallRoutes(host.webServer, installService)
+        const disposeInventory = mountInventoryRoute(host.webServer, inventoryService)
         return () => {
+          disposeInventory()
           disposeInstall()
           disposeSearch()
           disposeHealth()

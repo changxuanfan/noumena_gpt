@@ -31,6 +31,7 @@ function renderManager(
     search,
     prepareInstall,
     confirmInstall,
+    listManagedSkills: async () => [],
   }))
 }
 
@@ -43,7 +44,7 @@ describe('Skill Manager search', () => {
     renderManager(search)
 
     submit('react')
-    expect(screen.getByRole('status').textContent).toBe(en.searching)
+    expect(screen.getByText(en.searching)).toBeTruthy()
 
     resolveSearch?.([{
       id: 'owner/repo/react-skill',

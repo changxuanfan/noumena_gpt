@@ -6,8 +6,11 @@ const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const WINDOWS_ABSOLUTE_PATH = /^[a-z]:[\\/]/i
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/
 const MAX_FILES = 500
+const MAX_ENTRIES = 1_000
+const MAX_DEPTH = 20
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024
+const SHA256 = /^[a-f0-9]{64}$/
 
 export interface SnapshotFile {
   path: string
@@ -101,7 +104,7 @@ function snapshotHash(files: readonly Readonly<SnapshotFile>[]): string {
 }
 
 export function validateSnapshot(snapshot: SkillSnapshot): ValidatedSnapshot {
-  if (typeof snapshot.hash !== 'string' || snapshot.hash.length === 0 || snapshot.hash.length > 256) {
+  if (typeof snapshot.hash !== 'string' || !SHA256.test(snapshot.hash)) {
     throw new SnapshotValidationError('invalid-skill', 'The snapshot hash is invalid.')
   }
   if (!Array.isArray(snapshot.files) || snapshot.files.length === 0) {
@@ -112,19 +115,41 @@ export function validateSnapshot(snapshot: SkillSnapshot): ValidatedSnapshot {
   }
 
   const seenPaths = new Set<string>()
+  const seenDirectories = new Set<string>()
   let totalBytes = 0
   const files = snapshot.files.map(file => {
     if (typeof file.path !== 'string' || typeof file.contents !== 'string') {
       throw new SnapshotValidationError('invalid-skill', 'The snapshot contains an invalid file.')
     }
     const path = validateFilePath(file.path)
+    const segments = path.split('/')
+    if (segments.length - 1 > MAX_DEPTH) {
+      throw new SnapshotValidationError('resource-limit', 'The snapshot exceeds the directory depth limit.')
+    }
+    for (let index = 1; index < segments.length; index += 1) {
+      seenDirectories.add(segments.slice(0, index).join('/').toLowerCase())
+    }
+    if (snapshot.files.length + seenDirectories.size > MAX_ENTRIES) {
+      throw new SnapshotValidationError('resource-limit', 'The snapshot exceeds the entry limit.')
+    }
     const collisionKey = path.toLowerCase()
     if (seenPaths.has(collisionKey)) {
       throw new SnapshotValidationError('unsafe-path', 'The snapshot contains duplicate file paths.')
     }
     seenPaths.add(collisionKey)
 
-    const fileBytes = Buffer.byteLength(file.contents, 'utf8')
+    const encodedContents = Buffer.from(file.contents, 'utf8')
+    const decodedContents = new TextDecoder('utf-8', {
+      fatal: true,
+      ignoreBOM: true,
+    }).decode(encodedContents)
+    if (decodedContents !== file.contents) {
+      throw new SnapshotValidationError(
+        'invalid-skill',
+        'A snapshot file cannot be represented losslessly as UTF-8.',
+      )
+    }
+    const fileBytes = encodedContents.byteLength
     if (fileBytes > MAX_FILE_BYTES) {
       throw new SnapshotValidationError('resource-limit', 'A snapshot file exceeds the size limit.')
     }

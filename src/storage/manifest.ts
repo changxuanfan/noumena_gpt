@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { readFile, rename, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { open, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 export const MANAGER_DIRECTORY = '.dsh-skill-manager'
@@ -33,23 +34,41 @@ export class ManifestError extends Error {
   }
 }
 
+const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const SHA256 = /^[a-f0-9]{64}$/
+const MAX_MANIFEST_BYTES = 1 * 1024 * 1024
+const MAX_MANAGED_SKILLS = 500
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isManagedSkillRecord(value: unknown): value is ManagedSkillRecord {
   if (!isRecord(value)) return false
-  return [
-    'name',
-    'description',
-    'catalogId',
-    'source',
-    'pageUrl',
-    'remoteHash',
-    'localHash',
-    'installedAt',
-    'updatedAt',
-  ].every(key => typeof value[key] === 'string')
+  if (typeof value.name !== 'string'
+    || !SKILL_NAME.test(value.name)
+    || typeof value.description !== 'string'
+    || typeof value.catalogId !== 'string'
+    || value.catalogId.length === 0
+    || typeof value.source !== 'string'
+    || value.source.length === 0
+    || typeof value.pageUrl !== 'string'
+    || typeof value.remoteHash !== 'string'
+    || !SHA256.test(value.remoteHash)
+    || typeof value.localHash !== 'string'
+    || !SHA256.test(value.localHash)
+    || typeof value.installedAt !== 'string'
+    || !Number.isFinite(Date.parse(value.installedAt))
+    || typeof value.updatedAt !== 'string'
+    || !Number.isFinite(Date.parse(value.updatedAt))) {
+    return false
+  }
+  try {
+    const pageUrl = new URL(value.pageUrl)
+    return pageUrl.protocol === 'https:' && pageUrl.hostname === 'skills.sh'
+  } catch {
+    return false
+  }
 }
 
 function parseManifest(value: unknown): SkillManifest {
@@ -59,7 +78,11 @@ function parseManifest(value: unknown): SkillManifest {
     throw new ManifestError('manifest-invalid', 'The Skill Manager manifest is invalid.')
   }
   const skills: Record<string, ManagedSkillRecord> = {}
-  for (const [key, record] of Object.entries(value.skills)) {
+  const entries = Object.entries(value.skills)
+  if (entries.length > MAX_MANAGED_SKILLS) {
+    throw new ManifestError('manifest-invalid', 'The Skill Manager manifest contains too many skills.')
+  }
+  for (const [key, record] of entries) {
     if (!isManagedSkillRecord(record) || key !== record.name) {
       throw new ManifestError('manifest-invalid', 'The Skill Manager manifest is invalid.')
     }
@@ -76,8 +99,27 @@ export function emptyManifest(): SkillManifest {
 }
 
 export async function readManifest(managerRoot: string): Promise<SkillManifest> {
+  let handle
   try {
-    const text = await readFile(join(managerRoot, 'manifest.json'), 'utf8')
+    handle = await open(
+      join(managerRoot, 'manifest.json'),
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    )
+    const stats = await handle.stat()
+    if (!stats.isFile() || stats.size > MAX_MANIFEST_BYTES) {
+      throw new ManifestError('manifest-invalid', 'The Skill Manager manifest is oversized.')
+    }
+    const buffer = Buffer.allocUnsafe(MAX_MANIFEST_BYTES + 1)
+    let offset = 0
+    while (offset < buffer.byteLength) {
+      const { bytesRead } = await handle.read(buffer, offset, buffer.byteLength - offset, null)
+      if (bytesRead === 0) break
+      offset += bytesRead
+      if (offset > MAX_MANIFEST_BYTES) {
+        throw new ManifestError('manifest-invalid', 'The Skill Manager manifest is oversized.')
+      }
+    }
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, offset))
     return parseManifest(JSON.parse(text) as unknown)
   } catch (error) {
     if (isNodeError(error) && error.code === 'ENOENT') return emptyManifest()
@@ -88,6 +130,8 @@ export async function readManifest(managerRoot: string): Promise<SkillManifest> 
     throw new ManifestError('manifest-io', 'The Skill Manager manifest could not be read.', {
       cause: error,
     })
+  } finally {
+    await handle?.close()
   }
 }
 

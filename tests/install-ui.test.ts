@@ -50,6 +50,7 @@ async function renderResult(
     search: async () => [result],
     prepareInstall,
     confirmInstall,
+    listManagedSkills: async () => [],
   }))
   fireEvent.change(screen.getByLabelText(en.searchLabel), { target: { value: 'safe' } })
   fireEvent.click(screen.getByRole('button', { name: en.searchAction }))

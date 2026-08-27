@@ -9,6 +9,7 @@ import {
 import type { CatalogSkill } from '../contracts.ts'
 import type {
   ManagedSkillDocument,
+  ManagedSkillInventoryItem,
   PreparedInstallDocument,
 } from '../contracts.ts'
 import type { Translate } from './locales.ts'
@@ -27,6 +28,7 @@ export interface SkillManagerSectionProps {
     operationId: string,
     overwrite: boolean,
   ) => Promise<ManagedSkillDocument>
+  readonly listManagedSkills: () => Promise<readonly ManagedSkillInventoryItem[]>
 }
 
 type SearchState =
@@ -43,6 +45,11 @@ type InstallState =
   | { readonly status: 'success'; readonly skill: ManagedSkillDocument }
   | { readonly status: 'error'; readonly message: string }
 
+type InventoryState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'ready'; readonly skills: readonly ManagedSkillInventoryItem[] }
+  | { readonly status: 'error'; readonly message: string }
+
 function formatInstalls(installs: number): string {
   return new Intl.NumberFormat().format(installs)
 }
@@ -52,11 +59,14 @@ export function SkillManagerSection({
   search,
   prepareInstall,
   confirmInstall,
+  listManagedSkills,
 }: SkillManagerSectionProps): ReactNode {
   const [query, setQuery] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
   const [state, setState] = useState<SearchState>({ status: 'idle' })
   const [installState, setInstallState] = useState<InstallState>({ status: 'idle' })
+  const [inventoryVersion, setInventoryVersion] = useState(0)
+  const [inventoryState, setInventoryState] = useState<InventoryState>({ status: 'loading' })
   const activeRequest = useRef<AbortController | null>(null)
   const activePreparation = useRef<AbortController | null>(null)
 
@@ -64,6 +74,27 @@ export function SkillManagerSection({
     activeRequest.current?.abort()
     activePreparation.current?.abort()
   }, [])
+
+  useEffect(() => {
+    let current = true
+    setInventoryState({ status: 'loading' })
+    void listManagedSkills().then(
+      skills => {
+        if (current) setInventoryState({ status: 'ready', skills })
+      },
+      error => {
+        if (current) {
+          setInventoryState({
+            status: 'error',
+            message: error instanceof Error ? error.message : t('inventoryError'),
+          })
+        }
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [inventoryVersion, listManagedSkills, t])
 
   const runSearch = async (nextQuery: string): Promise<void> => {
     const normalizedQuery = nextQuery.trim()
@@ -119,6 +150,7 @@ export function SkillManagerSection({
         prepared.collision === 'managed',
       )
       setInstallState({ status: 'success', skill })
+      setInventoryVersion(version => version + 1)
     } catch (error) {
       setInstallState({
         status: 'error',
@@ -231,6 +263,51 @@ export function SkillManagerSection({
       : null,
     installState.status === 'error'
       ? h('p', { role: 'alert' }, installState.message)
+      : null,
+    h('h2', null, t('installedTitle')),
+    inventoryState.status === 'loading'
+      ? h('p', { role: 'status' }, t('loadingInstalled'))
+      : null,
+    inventoryState.status === 'error'
+      ? h(
+          'div',
+          null,
+          h('p', { role: 'alert' }, inventoryState.message),
+          h('button', {
+            type: 'button',
+            onClick: () => setInventoryVersion(version => version + 1),
+          }, t('retry')),
+        )
+      : null,
+    inventoryState.status === 'ready' && inventoryState.skills.length === 0
+      ? h('p', null, t('noInstalled'))
+      : null,
+    inventoryState.status === 'ready' && inventoryState.skills.length > 0
+      ? h(
+          'ul',
+          { 'aria-label': t('installedTitle') },
+          ...inventoryState.skills.map(skill => h(
+            'li',
+            { key: skill.name },
+            h('article', null,
+              h('h3', null, skill.name),
+              h('p', null, skill.description),
+              h('p', null, skill.source),
+              h('p', null, t(skill.state === 'current'
+                ? 'stateCurrent'
+                : skill.state === 'locally-modified'
+                  ? 'stateModified'
+                  : skill.state === 'missing'
+                    ? 'stateMissing'
+                    : 'stateInvalid')),
+              h('a', {
+                href: skill.pageUrl,
+                target: '_blank',
+                rel: 'noreferrer',
+              }, t('openPage')),
+            ),
+          )),
+        )
       : null,
   )
 }

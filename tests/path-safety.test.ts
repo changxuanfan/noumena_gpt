@@ -20,7 +20,7 @@ describe('skill snapshot path safety', () => {
     'nested/\u0000secret.txt',
   ])('rejects unsafe path %s', path => {
     expect(() => validateSnapshot({
-      hash: 'remote-hash',
+      hash: 'a'.repeat(64),
       files: [
         { path: 'SKILL.md', contents: validSkill },
         { path, contents: 'unsafe' },
@@ -30,7 +30,7 @@ describe('skill snapshot path safety', () => {
 
   it('rejects paths that collide after case normalization', () => {
     expect(() => validateSnapshot({
-      hash: 'remote-hash',
+      hash: 'a'.repeat(64),
       files: [
         { path: 'SKILL.md', contents: validSkill },
         { path: 'references/Test.md', contents: 'one' },
@@ -41,14 +41,31 @@ describe('skill snapshot path safety', () => {
 
   it('requires one root SKILL.md with valid DSH metadata', () => {
     expect(() => validateSnapshot({
-      hash: 'remote-hash',
+      hash: 'a'.repeat(64),
       files: [{ path: 'nested/SKILL.md', contents: validSkill }],
+    })).toThrowError(expect.objectContaining({ code: 'invalid-skill' }))
+  })
+
+  it('requires a SHA-256 remote snapshot hash', () => {
+    expect(() => validateSnapshot({
+      hash: 'not-a-sha256',
+      files: [{ path: 'SKILL.md', contents: validSkill }],
+    })).toThrowError(expect.objectContaining({ code: 'invalid-skill' }))
+  })
+
+  it('rejects text that cannot round-trip through UTF-8', () => {
+    expect(() => validateSnapshot({
+      hash: 'a'.repeat(64),
+      files: [
+        { path: 'SKILL.md', contents: validSkill },
+        { path: 'broken.txt', contents: '\uD800' },
+      ],
     })).toThrowError(expect.objectContaining({ code: 'invalid-skill' }))
   })
 
   it('accepts a valid bounded skill bundle', () => {
     const snapshot = validateSnapshot({
-      hash: 'remote-hash',
+      hash: 'a'.repeat(64),
       files: [
         { path: 'SKILL.md', contents: validSkill },
         { path: 'references/guide.md', contents: '# Guide' },

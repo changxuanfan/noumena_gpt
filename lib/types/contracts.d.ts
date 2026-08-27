@@ -40,6 +40,17 @@ export interface ManagedSkillDocument {
     readonly installedAt: string;
     readonly updatedAt: string;
 }
+export type ManagedSkillState = 'current' | 'locally-modified' | 'missing' | 'invalid';
+export interface ManagedSkillInventoryItem extends ManagedSkillDocument {
+    readonly state: ManagedSkillState;
+}
+export type InventoryEnvelope = {
+    readonly ok: true;
+    readonly skills: readonly ManagedSkillInventoryItem[];
+} | {
+    readonly ok: false;
+    readonly error: PublicError;
+};
 export type PrepareInstallEnvelope = {
     readonly ok: true;
     readonly prepared: PreparedInstallDocument;
@@ -58,3 +69,4 @@ export declare function isCatalogSkill(value: unknown): value is CatalogSkill;
 export declare function isSearchEnvelope(value: unknown): value is SearchEnvelope;
 export declare function isPrepareInstallEnvelope(value: unknown): value is PrepareInstallEnvelope;
 export declare function isConfirmInstallEnvelope(value: unknown): value is ConfirmInstallEnvelope;
+export declare function isInventoryEnvelope(value: unknown): value is InventoryEnvelope;
