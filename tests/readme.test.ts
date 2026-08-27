@@ -8,7 +8,7 @@ describe('README installation flow', () => {
     const corepackSetup = readme.indexOf('corepack enable pnpm')
     const pnpmVerification = readme.indexOf('pnpm --version')
     const pluginInstall = readme.indexOf(
-      'dsh plugin --profile web add github:changxuanfan/noumena_gpt#v0.1.0',
+      'dsh plugin --profile web add github:changxuanfan/noumena_gpt#v0.1.1',
     )
 
     expect(corepackSetup).toBeGreaterThan(-1)
