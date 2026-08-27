@@ -7,6 +7,10 @@ import {
   type ReactNode,
 } from 'react'
 import type { CatalogSkill } from '../contracts.ts'
+import type {
+  ManagedSkillDocument,
+  PreparedInstallDocument,
+} from '../contracts.ts'
 import type { Translate } from './locales.ts'
 
 export interface SkillManagerSectionProps {
@@ -15,6 +19,14 @@ export interface SkillManagerSectionProps {
     query: string,
     signal: AbortSignal,
   ) => Promise<readonly CatalogSkill[]>
+  readonly prepareInstall: (
+    id: string,
+    signal: AbortSignal,
+  ) => Promise<PreparedInstallDocument>
+  readonly confirmInstall: (
+    operationId: string,
+    overwrite: boolean,
+  ) => Promise<ManagedSkillDocument>
 }
 
 type SearchState =
@@ -23,17 +35,35 @@ type SearchState =
   | { readonly status: 'ready'; readonly results: readonly CatalogSkill[] }
   | { readonly status: 'error'; readonly message: string }
 
+type InstallState =
+  | { readonly status: 'idle' }
+  | { readonly status: 'preparing' }
+  | { readonly status: 'confirming'; readonly prepared: PreparedInstallDocument }
+  | { readonly status: 'installing'; readonly prepared: PreparedInstallDocument }
+  | { readonly status: 'success'; readonly skill: ManagedSkillDocument }
+  | { readonly status: 'error'; readonly message: string }
+
 function formatInstalls(installs: number): string {
   return new Intl.NumberFormat().format(installs)
 }
 
-export function SkillManagerSection({ t, search }: SkillManagerSectionProps): ReactNode {
+export function SkillManagerSection({
+  t,
+  search,
+  prepareInstall,
+  confirmInstall,
+}: SkillManagerSectionProps): ReactNode {
   const [query, setQuery] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
   const [state, setState] = useState<SearchState>({ status: 'idle' })
+  const [installState, setInstallState] = useState<InstallState>({ status: 'idle' })
   const activeRequest = useRef<AbortController | null>(null)
+  const activePreparation = useRef<AbortController | null>(null)
 
-  useEffect(() => () => activeRequest.current?.abort(), [])
+  useEffect(() => () => {
+    activeRequest.current?.abort()
+    activePreparation.current?.abort()
+  }, [])
 
   const runSearch = async (nextQuery: string): Promise<void> => {
     const normalizedQuery = nextQuery.trim()
@@ -60,6 +90,41 @@ export function SkillManagerSection({ t, search }: SkillManagerSectionProps): Re
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
     void runSearch(query)
+  }
+
+  const beginInstall = async (skill: CatalogSkill): Promise<void> => {
+    activePreparation.current?.abort()
+    const controller = new AbortController()
+    activePreparation.current = controller
+    setInstallState({ status: 'preparing' })
+    try {
+      const prepared = await prepareInstall(skill.id, controller.signal)
+      if (activePreparation.current === controller) {
+        setInstallState({ status: 'confirming', prepared })
+      }
+    } catch (error) {
+      if (controller.signal.aborted || activePreparation.current !== controller) return
+      setInstallState({
+        status: 'error',
+        message: error instanceof Error ? error.message : t('genericError'),
+      })
+    }
+  }
+
+  const finishInstall = async (prepared: PreparedInstallDocument): Promise<void> => {
+    setInstallState({ status: 'installing', prepared })
+    try {
+      const skill = await confirmInstall(
+        prepared.operationId,
+        prepared.collision === 'managed',
+      )
+      setInstallState({ status: 'success', skill })
+    } catch (error) {
+      setInstallState({
+        status: 'error',
+        message: error instanceof Error ? error.message : t('genericError'),
+      })
+    }
   }
 
   return h(
@@ -118,9 +183,54 @@ export function SkillManagerSection({ t, search }: SkillManagerSectionProps): Re
                 target: '_blank',
                 rel: 'noreferrer',
               }, t('openPage')),
+              h('button', {
+                type: 'button',
+                disabled: installState.status === 'preparing'
+                  || installState.status === 'installing',
+                onClick: () => void beginInstall(skill),
+              }, t('install')),
             ),
           )),
         )
+      : null,
+    installState.status === 'preparing'
+      ? h('p', { role: 'status', 'aria-live': 'polite' }, t('preparingInstall'))
+      : null,
+    installState.status === 'confirming'
+      ? h(
+          'div',
+          {
+            role: 'dialog',
+            'aria-modal': 'true',
+            'aria-labelledby': 'dsh-skill-install-confirmation',
+          },
+          h('h3', { id: 'dsh-skill-install-confirmation' }, t('confirmInstallTitle')),
+          h('strong', null, installState.prepared.name),
+          h('p', null, installState.prepared.description),
+          h('p', null, installState.prepared.source),
+          h('p', null, installState.prepared.collision === 'managed'
+            ? t('overwritePrompt')
+            : t('installPrompt')),
+          h('button', {
+            type: 'button',
+            onClick: () => setInstallState({ status: 'idle' }),
+          }, t('cancel')),
+          h('button', {
+            type: 'button',
+            onClick: () => void finishInstall(installState.prepared),
+          }, installState.prepared.collision === 'managed'
+            ? t('confirmOverwrite')
+            : t('confirmInstall')),
+        )
+      : null,
+    installState.status === 'installing'
+      ? h('p', { role: 'status', 'aria-live': 'polite' }, t('installing'))
+      : null,
+    installState.status === 'success'
+      ? h('p', { role: 'status' }, `${t('installed')} ${installState.skill.name}`)
+      : null,
+    installState.status === 'error'
+      ? h('p', { role: 'alert' }, installState.message)
       : null,
   )
 }

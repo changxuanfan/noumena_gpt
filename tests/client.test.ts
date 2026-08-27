@@ -11,7 +11,18 @@ describe('SkillManagerSection', () => {
   ])('renders its localized heading and introduction in %s', (_language, messages) => {
     const t = (key: LocaleKey): string => messages[key]
     const search = async (): Promise<never[]> => []
-    const markup = renderToStaticMarkup(h(SkillManagerSection, { t, search }))
+    const prepareInstall = async (): Promise<never> => {
+      throw new Error('not called')
+    }
+    const confirmInstall = async (): Promise<never> => {
+      throw new Error('not called')
+    }
+    const markup = renderToStaticMarkup(h(SkillManagerSection, {
+      t,
+      search,
+      prepareInstall,
+      confirmInstall,
+    }))
 
     expect(markup).toContain(messages.title)
     expect(markup).toContain(messages.introduction)

@@ -19,7 +19,10 @@ interface CatalogSearcher {
   search(query: string, signal: AbortSignal): Promise<readonly CatalogSkill[]>
 }
 
-function publicError(error: unknown): { readonly status: number; readonly error: PublicError } {
+function publicError(error: unknown): {
+  readonly status: number
+  readonly error: PublicError<SearchErrorCode>
+} {
   if (!(error instanceof SkillsShError)) {
     return {
       status: 500,

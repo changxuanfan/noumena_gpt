@@ -1,5 +1,6 @@
 import { parse } from 'yaml'
 import type { CatalogSkill, SearchErrorCode } from '../contracts.ts'
+import type { SkillSnapshot } from '../storage/snapshot.ts'
 
 const DEFAULT_BASE_URL = 'https://skills.sh'
 const DEFAULT_LIMIT = 20
@@ -99,6 +100,16 @@ function parseSnapshotFiles(value: unknown): readonly SnapshotFile[] {
     }
     return { path: file.path, contents: file.contents }
   })
+}
+
+function parseSkillSnapshot(value: unknown): SkillSnapshot {
+  if (!isRecord(value) || typeof value.hash !== 'string') {
+    throw new SkillsShError('invalid-response', 'Skills.sh returned an invalid skill snapshot.')
+  }
+  return {
+    hash: value.hash,
+    files: [...parseSnapshotFiles(value)],
+  }
 }
 
 function descriptionFromSkillMarkdown(markdown: string): string | null {
@@ -224,6 +235,20 @@ export class SkillsShClient {
       description: await this.loadDescription(entry.id, signal),
       pageUrl: new URL(entry.id.split('/').map(encodeURIComponent).join('/'), this.baseUrl).href,
     }))
+  }
+
+  async download(id: string, signal: AbortSignal): Promise<SkillSnapshot> {
+    const catalogId = safeCatalogId(id)
+    if (catalogId === null) {
+      throw new SkillsShError('invalid-query', 'The catalog skill identifier is invalid.')
+    }
+    const encodedId = catalogId.split('/').map(encodeURIComponent).join('/')
+    const snapshot = await this.requestJson(
+      new URL(`/api/download/${encodedId}`, this.baseUrl),
+      signal,
+      SNAPSHOT_RESPONSE_LIMIT_BYTES,
+    )
+    return parseSkillSnapshot(snapshot)
   }
 
   private async loadDescription(id: string, signal: AbortSignal): Promise<string | null> {

@@ -1,6 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+import { mountInstallRoutes } from './install-routes.ts'
 import { mountSearchRoute } from './search-route.ts'
+import { SkillsShClient } from './skills-sh/client.ts'
+import { InstallService } from './storage/install-service.ts'
+import { defaultSkillsRoot } from './storage/roots.ts'
 
 export const name = 'dsh-skill-manager'
 
@@ -50,9 +54,16 @@ export function apply(ctx: Context): void {
     const host = scopedContext as unknown as SkillManagerHost
     host.effect(
       () => {
+        const skillsSh = new SkillsShClient()
+        const installService = new InstallService({
+          skillsRoot: defaultSkillsRoot(),
+          catalog: skillsSh,
+        })
         const disposeHealth = mountHealthRoute(host.webServer)
-        const disposeSearch = mountSearchRoute(host.webServer)
+        const disposeSearch = mountSearchRoute(host.webServer, skillsSh)
+        const disposeInstall = mountInstallRoutes(host.webServer, installService)
         return () => {
+          disposeInstall()
           disposeSearch()
           disposeHealth()
         }
