@@ -18,12 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate workflow artifacts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate package
         run: |
-          test -f AGENTS.md
-          test -f CONTEXT.md
-          test -f docs/agents/issue-tracker.md
-          test -f docs/specification.md
-          test -f skills-lock.json
-          test -f .agents/skills/ask-matt/SKILL.md
-          test -f .agents/skills/setup-matt-pocock-skills/SKILL.md
+          npm run check
+          npm pack --dry-run

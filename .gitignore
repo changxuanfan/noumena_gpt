@@ -1,5 +1,4 @@
 node_modules/
-lib/
 dist/
 coverage/
 .DS_Store
@@ -10,4 +9,3 @@ coverage/
 *.tsbuildinfo
 .scratch/
 .dsh-test-home/
-
