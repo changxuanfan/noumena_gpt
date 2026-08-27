@@ -1,0 +1,30 @@
+name: Feature
+description: Propose a verifiable product change
+title: ""
+labels:
+  - needs-triage
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user problem rather than a preferred implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected behavior
+      description: Describe the externally observable outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List objective conditions that prove the work is complete.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+        if: ${{ hashFiles('package-lock.json') != '' }}
+      - name: Validate package
+        if: ${{ hashFiles('package-lock.json') != '' }}
+        run: |
+          npm ci
+          npm run check
+          npm pack --dry-run
+      - name: Await package scaffold
+        if: ${{ hashFiles('package-lock.json') == '' }}
+        run: echo "Repository workflow is configured; package validation begins with the scaffold."
+
