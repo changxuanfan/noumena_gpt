@@ -89,4 +89,39 @@ describe('SkillsShClient', () => {
     await expect(client.search('skill', new AbortController().signal))
       .rejects.toMatchObject<Partial<SkillsShError>>({ code: 'network' })
   })
+
+  it('rejects redirects at the fetch boundary', async () => {
+    let redirect: RequestRedirect | undefined
+    const fetcher: Fetcher = async (_input, init) => {
+      redirect = init?.redirect
+      return json({ skills: [] })
+    }
+
+    await new SkillsShClient({ fetcher }).search('skill', new AbortController().signal)
+    expect(redirect).toBe('error')
+  })
+
+  it('rejects a response whose declared size exceeds the local limit', async () => {
+    const fetcher: Fetcher = async () => new Response('{}', {
+      headers: { 'content-length': String(2 * 1024 * 1024) },
+    })
+    const client = new SkillsShClient({ fetcher })
+
+    await expect(client.search('skill', new AbortController().signal))
+      .rejects.toMatchObject<Partial<SkillsShError>>({ code: 'invalid-response' })
+  })
+
+  it('rejects more results than requested before enrichment', async () => {
+    const skills = Array.from({ length: 21 }, (_, index) => ({
+      id: `owner/repo/skill-${index}`,
+      name: `skill-${index}`,
+      source: 'owner/repo',
+      installs: index,
+    }))
+    const fetcher: Fetcher = async () => json({ skills })
+    const client = new SkillsShClient({ fetcher })
+
+    await expect(client.search('skill', new AbortController().signal))
+      .rejects.toMatchObject<Partial<SkillsShError>>({ code: 'invalid-response' })
+  })
 })

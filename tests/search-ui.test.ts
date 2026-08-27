@@ -73,7 +73,7 @@ describe('Skill Manager search', () => {
 
     submit('first')
     fireEvent.change(screen.getByLabelText(en.searchLabel), { target: { value: 'second' } })
-    fireEvent.submit(screen.getByRole('button', { name: en.searchAction }).closest('form')!)
+    fireEvent.click(screen.getByRole('button', { name: en.searchAction }))
 
     expect(signals).toHaveLength(2)
     expect(signals[0]?.aborted).toBe(true)

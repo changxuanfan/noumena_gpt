@@ -5,6 +5,8 @@ const DEFAULT_BASE_URL = 'https://skills.sh'
 const DEFAULT_LIMIT = 20
 const DEFAULT_TIMEOUT_MS = 10_000
 const DESCRIPTION_CONCURRENCY = 4
+const SEARCH_RESPONSE_LIMIT_BYTES = 1 * 1024 * 1024
+const SNAPSHOT_RESPONSE_LIMIT_BYTES = 10 * 1024 * 1024
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/g
 
 export type Fetcher = (
@@ -54,6 +56,9 @@ function safeCatalogId(value: string): string | null {
 function parseSearchEntries(value: unknown): readonly SearchEntry[] {
   if (!isRecord(value) || !Array.isArray(value.skills)) {
     throw new SkillsShError('invalid-response', 'Skills.sh returned an invalid search response.')
+  }
+  if (value.skills.length > DEFAULT_LIMIT) {
+    throw new SkillsShError('invalid-response', 'Skills.sh returned too many search results.')
   }
 
   return value.skills.map((entry): SearchEntry => {
@@ -131,6 +136,59 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
+async function readJsonLimited(response: Response, maximumBytes: number): Promise<unknown> {
+  const declaredLength = response.headers.get('content-length')
+  if (declaredLength !== null) {
+    const parsedLength = Number(declaredLength)
+    if (!Number.isFinite(parsedLength) || parsedLength < 0 || parsedLength > maximumBytes) {
+      throw new SkillsShError('invalid-response', 'Skills.sh returned an oversized response.')
+    }
+  }
+
+  if (response.body === null) {
+    const text = await response.text()
+    if (new TextEncoder().encode(text).byteLength > maximumBytes) {
+      throw new SkillsShError('invalid-response', 'Skills.sh returned an oversized response.')
+    }
+    try {
+      return JSON.parse(text) as unknown
+    } catch {
+      throw new SkillsShError('invalid-response', 'Skills.sh returned invalid JSON.')
+    }
+  }
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+  try {
+    while (true) {
+      const result = await reader.read()
+      if (result.done) break
+      totalBytes += result.value.byteLength
+      if (totalBytes > maximumBytes) {
+        await reader.cancel()
+        throw new SkillsShError('invalid-response', 'Skills.sh returned an oversized response.')
+      }
+      chunks.push(result.value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  const bytes = new Uint8Array(totalBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes)) as unknown
+  } catch {
+    throw new SkillsShError('invalid-response', 'Skills.sh returned invalid JSON.')
+  }
+}
+
 export interface SkillsShClientOptions {
   readonly fetcher?: Fetcher
   readonly baseUrl?: string
@@ -157,7 +215,7 @@ export class SkillsShClient {
     const url = new URL('/api/search', this.baseUrl)
     url.searchParams.set('q', normalizedQuery)
     url.searchParams.set('limit', String(DEFAULT_LIMIT))
-    const search = await this.requestJson(url, signal)
+    const search = await this.requestJson(url, signal, SEARCH_RESPONSE_LIMIT_BYTES)
     const entries = [...parseSearchEntries(search)]
       .sort((left, right) => right.installs - left.installs)
 
@@ -171,7 +229,11 @@ export class SkillsShClient {
   private async loadDescription(id: string, signal: AbortSignal): Promise<string | null> {
     try {
       const encodedId = id.split('/').map(encodeURIComponent).join('/')
-      const snapshot = await this.requestJson(new URL(`/api/download/${encodedId}`, this.baseUrl), signal)
+      const snapshot = await this.requestJson(
+        new URL(`/api/download/${encodedId}`, this.baseUrl),
+        signal,
+        SNAPSHOT_RESPONSE_LIMIT_BYTES,
+      )
       const files = parseSnapshotFiles(snapshot)
       const skillFile = files.find(file => /(^|\/)skill\.md$/i.test(file.path))
       return skillFile === undefined ? null : descriptionFromSkillMarkdown(skillFile.contents)
@@ -181,13 +243,18 @@ export class SkillsShClient {
     }
   }
 
-  private async requestJson(url: URL, signal: AbortSignal): Promise<unknown> {
+  private async requestJson(
+    url: URL,
+    signal: AbortSignal,
+    maximumBytes: number,
+  ): Promise<unknown> {
     const timeoutSignal = AbortSignal.timeout(this.timeoutMs)
     const combinedSignal = AbortSignal.any([signal, timeoutSignal])
 
     try {
       const response = await this.fetcher(url, {
         headers: { accept: 'application/json' },
+        redirect: 'error',
         signal: combinedSignal,
       })
       if (!response.ok) {
@@ -197,7 +264,7 @@ export class SkillsShClient {
           response.status,
         )
       }
-      return await response.json()
+      return await readJsonLimited(response, maximumBytes)
     } catch (error) {
       if (error instanceof SkillsShError) throw error
       if (signal.aborted) {

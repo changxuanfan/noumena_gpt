@@ -81,7 +81,7 @@ export function SkillManagerSection({ t, search }: SkillManagerSectionProps): Re
       }),
       h('button', {
         type: 'submit',
-        disabled: query.trim().length === 0 || state.status === 'loading',
+        disabled: query.trim().length === 0,
       }, t('searchAction')),
     ),
     state.status === 'loading'

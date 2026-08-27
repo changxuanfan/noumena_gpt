@@ -50,7 +50,7 @@ window.__ModuleLoader__.load({
 				onChange: (event) => setQuery(event.currentTarget.value)
 			}), (0, react.createElement)("button", {
 				type: "submit",
-				disabled: query.trim().length === 0 || state.status === "loading"
+				disabled: query.trim().length === 0
 			}, t("searchAction"))), state.status === "loading" ? (0, react.createElement)("p", {
 				role: "status",
 				"aria-live": "polite"
