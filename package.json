@@ -27,7 +27,8 @@
     "build:client": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test && npm run build"
+    "check:generated": "npm run build && git diff --exit-code -- client lib",
+    "check": "npm run typecheck && npm test && npm run check:generated"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
