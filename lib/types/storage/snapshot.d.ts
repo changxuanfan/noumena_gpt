@@ -17,4 +17,5 @@ export declare class SnapshotValidationError extends Error {
     readonly code: 'unsafe-path' | 'invalid-skill' | 'resource-limit';
     constructor(code: 'unsafe-path' | 'invalid-skill' | 'resource-limit', message: string);
 }
+export declare function computeSnapshotHash(files: readonly Readonly<SnapshotFile>[]): string;
 export declare function validateSnapshot(snapshot: SkillSnapshot): ValidatedSnapshot;

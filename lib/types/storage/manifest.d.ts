@@ -20,5 +20,6 @@ export declare class ManifestError extends Error {
     constructor(code: 'manifest-invalid' | 'manifest-io', message: string, options?: ErrorOptions);
 }
 export declare function emptyManifest(): SkillManifest;
+export declare function managedRecordsEqual(left: ManagedSkillRecord, right: ManagedSkillRecord): boolean;
 export declare function readManifest(managerRoot: string): Promise<SkillManifest>;
 export declare function writeManifestAtomic(managerRoot: string, manifest: SkillManifest): Promise<void>;

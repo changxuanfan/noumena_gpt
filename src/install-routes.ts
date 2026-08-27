@@ -5,8 +5,10 @@ import type {
 } from 'node:http'
 import type {
   ConfirmInstallEnvelope,
+  ConfirmRemovalEnvelope,
   LifecycleErrorCode,
   PrepareInstallEnvelope,
+  PrepareRemovalEnvelope,
   PublicError,
   UpdateCheckEnvelope,
 } from './contracts.ts'
@@ -14,6 +16,7 @@ import { SkillsShError } from './skills-sh/client.ts'
 import { InstallError, type InstallService } from './storage/install-service.ts'
 import { ManifestError } from './storage/manifest.ts'
 import { RootSafetyError } from './storage/roots.ts'
+import { RemovalError, type RemovalService } from './storage/removal-service.ts'
 import { SnapshotValidationError } from './storage/snapshot.ts'
 import type { SearchWebServer } from './search-route.ts'
 
@@ -99,6 +102,13 @@ function lifecycleError(error: unknown): {
         || error.code === 'state-changed' ? 409
         : 500
     message = error.message
+  } else if (error instanceof RemovalError) {
+    code = error.code
+    status = error.code === 'not-managed' ? 404
+      : error.code === 'operation-expired' ? 410
+        : error.code === 'state-changed' ? 409
+          : 500
+    message = error.message
   } else if (error instanceof ManifestError) {
     code = 'install-failed'
     status = 500
@@ -120,7 +130,11 @@ function lifecycleError(error: unknown): {
 function writeJson(
   response: ServerResponse,
   status: number,
-  body: PrepareInstallEnvelope | ConfirmInstallEnvelope | UpdateCheckEnvelope,
+  body: PrepareInstallEnvelope
+    | ConfirmInstallEnvelope
+    | UpdateCheckEnvelope
+    | PrepareRemovalEnvelope
+    | ConfirmRemovalEnvelope,
 ): void {
   response.statusCode = status
   response.setHeader('content-type', 'application/json; charset=utf-8')
@@ -148,6 +162,7 @@ function assertPost(request: IncomingMessage, response: ServerResponse): boolean
 export function mountInstallRoutes(
   webServer: SearchWebServer,
   service: InstallService,
+  removal: RemovalService,
 ): () => void {
   const disposePrepare = webServer.register({
     kind: 'exact',
@@ -233,7 +248,47 @@ export function mountInstallRoutes(
     },
   })
 
+  const disposeRemovalPrepare = webServer.register({
+    kind: 'exact',
+    path: '/dsh-skill-manager/api/remove/prepare',
+    async handler(request, response) {
+      if (!assertPost(request, response)) return
+      try {
+        const body = await readJsonBody(request)
+        if (!isRecord(body) || typeof body.name !== 'string') {
+          throw new RequestError('A Managed Skill name is required.')
+        }
+        const prepared = await removal.prepare(body.name)
+        writeJson(response, 200, { ok: true, prepared })
+      } catch (error) {
+        const failure = lifecycleError(error)
+        writeJson(response, failure.status, { ok: false, error: failure.error })
+      }
+    },
+  })
+
+  const disposeRemovalConfirm = webServer.register({
+    kind: 'exact',
+    path: '/dsh-skill-manager/api/remove/confirm',
+    async handler(request, response) {
+      if (!assertPost(request, response)) return
+      try {
+        const body = await readJsonBody(request)
+        if (!isRecord(body) || typeof body.operationId !== 'string') {
+          throw new RequestError('A prepared removal operation is required.')
+        }
+        const name = await removal.confirm(body.operationId)
+        writeJson(response, 200, { ok: true, name })
+      } catch (error) {
+        const failure = lifecycleError(error)
+        writeJson(response, failure.status, { ok: false, error: failure.error })
+      }
+    },
+  })
+
   return () => {
+    disposeRemovalConfirm()
+    disposeRemovalPrepare()
     disposeUpdateConfirm()
     disposeUpdateCheck()
     disposeConfirm()

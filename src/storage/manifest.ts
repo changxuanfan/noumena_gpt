@@ -98,6 +98,21 @@ export function emptyManifest(): SkillManifest {
   return { version: MANIFEST_VERSION, skills: {} }
 }
 
+export function managedRecordsEqual(
+  left: ManagedSkillRecord,
+  right: ManagedSkillRecord,
+): boolean {
+  return left.name === right.name
+    && left.description === right.description
+    && left.catalogId === right.catalogId
+    && left.source === right.source
+    && left.pageUrl === right.pageUrl
+    && left.remoteHash === right.remoteHash
+    && left.localHash === right.localHash
+    && left.installedAt === right.installedAt
+    && left.updatedAt === right.updatedAt
+}
+
 export async function readManifest(managerRoot: string): Promise<SkillManifest> {
   let handle
   try {

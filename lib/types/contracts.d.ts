@@ -7,7 +7,7 @@ export interface CatalogSkill {
     readonly pageUrl: string;
 }
 export type SearchErrorCode = 'invalid-query' | 'network' | 'timeout' | 'upstream' | 'invalid-response';
-export type LifecycleErrorCode = 'invalid-request' | 'unsafe-path' | 'invalid-skill' | 'resource-limit' | 'operation-expired' | 'overwrite-required' | 'unmanaged-collision' | 'install-failed' | 'rollback-failed' | 'unsafe-root' | 'not-managed' | 'state-changed';
+export type LifecycleErrorCode = 'invalid-request' | 'unsafe-path' | 'invalid-skill' | 'resource-limit' | 'operation-expired' | 'overwrite-required' | 'unmanaged-collision' | 'install-failed' | 'rollback-failed' | 'unsafe-root' | 'not-managed' | 'state-changed' | 'remove-failed';
 export type PublicErrorCode = SearchErrorCode | LifecycleErrorCode;
 export interface PublicError<Code extends PublicErrorCode = PublicErrorCode> {
     readonly code: Code;
@@ -66,6 +66,28 @@ export type UpdateCheckEnvelope = {
     readonly ok: false;
     readonly error: PublicError;
 };
+export interface PreparedRemovalDocument {
+    readonly operationId: string;
+    readonly name: string;
+    readonly description: string;
+    readonly source: string;
+    readonly state: ManagedSkillState;
+    readonly expiresAt: string;
+}
+export type PrepareRemovalEnvelope = {
+    readonly ok: true;
+    readonly prepared: PreparedRemovalDocument;
+} | {
+    readonly ok: false;
+    readonly error: PublicError;
+};
+export type ConfirmRemovalEnvelope = {
+    readonly ok: true;
+    readonly name: string;
+} | {
+    readonly ok: false;
+    readonly error: PublicError;
+};
 export type PrepareInstallEnvelope = {
     readonly ok: true;
     readonly prepared: PreparedInstallDocument;
@@ -86,3 +108,5 @@ export declare function isPrepareInstallEnvelope(value: unknown): value is Prepa
 export declare function isConfirmInstallEnvelope(value: unknown): value is ConfirmInstallEnvelope;
 export declare function isInventoryEnvelope(value: unknown): value is InventoryEnvelope;
 export declare function isUpdateCheckEnvelope(value: unknown): value is UpdateCheckEnvelope;
+export declare function isPrepareRemovalEnvelope(value: unknown): value is PrepareRemovalEnvelope;
+export declare function isConfirmRemovalEnvelope(value: unknown): value is ConfirmRemovalEnvelope;
