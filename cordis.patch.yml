@@ -1,0 +1,4 @@
+# Insert the Skill Manager host plugin into the selected DSH profile.
+- insert:
+    - id: dsh-skill-manager
+      name: dsh-skill-manager
