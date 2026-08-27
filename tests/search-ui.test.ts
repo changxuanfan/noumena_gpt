@@ -10,7 +10,9 @@ const t = (key: LocaleKey): string => en[key]
 afterEach(cleanup)
 
 function submit(query: string): void {
-  fireEvent.change(screen.getByLabelText(en.searchLabel), { target: { value: query } })
+  fireEvent.change(screen.getByRole('searchbox', { name: en.searchLabel }), {
+    target: { value: query },
+  })
   fireEvent.click(screen.getByRole('button', { name: en.searchAction }))
 }
 
@@ -97,7 +99,9 @@ describe('Skill Manager search', () => {
     renderManager(search)
 
     submit('first')
-    fireEvent.change(screen.getByLabelText(en.searchLabel), { target: { value: 'second' } })
+    fireEvent.change(screen.getByRole('searchbox', { name: en.searchLabel }), {
+      target: { value: 'second' },
+    })
     fireEvent.click(screen.getByRole('button', { name: en.searchAction }))
 
     expect(signals).toHaveLength(2)

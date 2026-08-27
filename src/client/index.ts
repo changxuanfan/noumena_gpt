@@ -6,6 +6,7 @@ import { confirmInstall, prepareInstall } from './install-api.ts'
 import { listManagedSkills } from './inventory-api.ts'
 import { checkSkillUpdate, confirmSkillUpdate } from './update-api.ts'
 import { confirmSkillRemoval, prepareSkillRemoval } from './remove-api.ts'
+import { installStyles } from './styles.ts'
 
 const namespace = 'dsh-skill-manager'
 
@@ -46,6 +47,7 @@ export function apply(ctx: SkillManagerClientContext): void {
     () => ctx.locale.register(namespace, { en, zh }),
     'dsh-skill-manager: dictionaries',
   )
+  ctx.effect(installStyles, 'dsh-skill-manager: styles')
 
   const t = ctx.locale.bind(namespace)
   ctx.slots.inject('settings.section', () => ctx.slots.register({

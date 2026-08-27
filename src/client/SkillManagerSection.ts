@@ -14,6 +14,7 @@ import type {
   PreparedRemovalDocument,
   UpdateCheckDocument,
 } from '../contracts.ts'
+import { ConfirmDialog } from './ConfirmDialog.ts'
 import type { Translate } from './locales.ts'
 
 export interface SkillManagerSectionProps {
@@ -98,6 +99,15 @@ export function SkillManagerSection({
   const [removalState, setRemovalState] = useState<RemovalState>({ status: 'idle' })
   const activeRequest = useRef<AbortController | null>(null)
   const activePreparation = useRef<AbortController | null>(null)
+  const operationBusy = installState.status === 'preparing'
+    || installState.status === 'confirming'
+    || installState.status === 'installing'
+    || updateState.status === 'checking'
+    || updateState.status === 'confirming'
+    || updateState.status === 'updating'
+    || removalState.status === 'preparing'
+    || removalState.status === 'confirming'
+    || removalState.status === 'removing'
 
   useEffect(() => () => {
     activeRequest.current?.abort()
@@ -153,6 +163,7 @@ export function SkillManagerSection({
   }
 
   const beginInstall = async (skill: CatalogSkill): Promise<void> => {
+    if (operationBusy) return
     activePreparation.current?.abort()
     const controller = new AbortController()
     activePreparation.current = controller
@@ -189,6 +200,7 @@ export function SkillManagerSection({
   }
 
   const checkUpdate = async (name: string): Promise<void> => {
+    if (operationBusy) return
     setUpdateState({ status: 'checking', name })
     try {
       const update = await checkSkillUpdate(name)
@@ -219,6 +231,7 @@ export function SkillManagerSection({
   }
 
   const beginRemoval = async (name: string): Promise<void> => {
+    if (operationBusy) return
     setRemovalState({ status: 'preparing', name })
     try {
       const prepared = await prepareSkillRemoval(name)
@@ -247,171 +260,187 @@ export function SkillManagerSection({
 
   return h(
     'section',
-    { 'aria-labelledby': 'dsh-skill-manager-title' },
-    h('h2', { id: 'dsh-skill-manager-title' }, t('title')),
-    h('p', null, t('introduction')),
+    {
+      className: 'dsm-root',
+      'aria-labelledby': 'dsh-skill-manager-title',
+      'aria-busy': operationBusy,
+    },
+    h(
+      'header',
+      { className: 'dsm-header' },
+      h('h2', { id: 'dsh-skill-manager-title', tabIndex: -1 }, t('title')),
+      h('p', { className: 'dsm-subtitle' }, t('introduction')),
+    ),
+    h('section', { className: 'dsm-panel', 'aria-labelledby': 'dsm-search-title' },
+      h('h2', { id: 'dsm-search-title' }, t('searchLabel')),
     h(
       'form',
-      { onSubmit: submit },
-      h('label', { htmlFor: 'dsh-skill-search' }, t('searchLabel')),
+      { className: 'dsm-search', onSubmit: submit },
+      h('label', { className: 'dsm-field', htmlFor: 'dsh-skill-search' },
+        t('searchLabel'),
       h('input', {
+        className: 'dsm-input',
         id: 'dsh-skill-search',
         name: 'query',
         type: 'search',
         value: query,
         placeholder: t('searchPlaceholder'),
         onChange: (event: { currentTarget: { value: string } }) => setQuery(event.currentTarget.value),
-      }),
+      })),
       h('button', {
+        className: 'dsm-button dsm-button-primary',
         type: 'submit',
         disabled: query.trim().length === 0,
       }, t('searchAction')),
     ),
     state.status === 'loading'
-      ? h('p', { role: 'status', 'aria-live': 'polite' }, t('searching'))
+      ? h('p', { className: 'dsm-status', role: 'status', 'aria-live': 'polite' }, t('searching'))
       : null,
     state.status === 'error'
       ? h(
           'div',
-          null,
+          { className: 'dsm-status dsm-error' },
           h('p', { role: 'alert' }, state.message),
           h('button', {
+            className: 'dsm-button dsm-button-secondary',
             type: 'button',
             onClick: () => void runSearch(submittedQuery),
           }, t('retry')),
         )
       : null,
     state.status === 'ready' && state.results.length === 0
-      ? h('p', { role: 'status' }, t('empty'))
+      ? h('p', { className: 'dsm-empty', role: 'status' }, t('empty'))
       : null,
     state.status === 'ready' && state.results.length > 0
       ? h(
           'ul',
-          { 'aria-label': t('searchLabel') },
+          { className: 'dsm-list', 'aria-label': t('searchLabel') },
           ...state.results.map(skill => h(
             'li',
             { key: skill.id },
-            h('article', null,
+            h('article', { className: 'dsm-card' },
               h('h3', null, skill.name),
-              h('p', null, skill.description ?? t('descriptionUnavailable')),
-              h('p', null, skill.source),
-              h('p', null, `${formatInstalls(skill.installs)} ${t('installs')}`),
+              h('p', { className: 'dsm-description' }, skill.description ?? t('descriptionUnavailable')),
+              h('p', { className: 'dsm-meta' }, skill.source),
+              h('p', { className: 'dsm-meta' }, `${formatInstalls(skill.installs)} ${t('installs')}`),
+              h('div', { className: 'dsm-actions' },
               h('a', {
+                className: 'dsm-link',
                 href: skill.pageUrl,
                 target: '_blank',
                 rel: 'noreferrer',
               }, t('openPage')),
               h('button', {
+                className: 'dsm-button dsm-button-primary',
                 type: 'button',
-                disabled: installState.status === 'preparing'
-                  || installState.status === 'installing',
+                disabled: operationBusy,
                 onClick: () => void beginInstall(skill),
               }, t('install')),
+              ),
             ),
           )),
         )
       : null,
+    ),
     installState.status === 'preparing'
-      ? h('p', { role: 'status', 'aria-live': 'polite' }, t('preparingInstall'))
+      ? h('p', { className: 'dsm-status', role: 'status', 'aria-live': 'polite' }, t('preparingInstall'))
       : null,
     installState.status === 'confirming'
-      ? h(
-          'div',
-          {
-            role: 'dialog',
-            'aria-modal': 'true',
-            'aria-labelledby': 'dsh-skill-install-confirmation',
-          },
-          h('h3', { id: 'dsh-skill-install-confirmation' }, t('confirmInstallTitle')),
+      ? h(ConfirmDialog, {
+          titleId: 'dsh-skill-install-confirmation',
+          title: t('confirmInstallTitle'),
+          cancelLabel: t('cancel'),
+          confirmLabel: installState.prepared.collision === 'managed'
+            ? t('confirmOverwrite')
+            : t('confirmInstall'),
+          onCancel: () => setInstallState({ status: 'idle' }),
+          onConfirm: () => void finishInstall(installState.prepared),
+        },
           h('strong', null, installState.prepared.name),
           h('p', null, installState.prepared.description),
           h('p', null, installState.prepared.source),
           h('p', null, installState.prepared.collision === 'managed'
             ? t('overwritePrompt')
             : t('installPrompt')),
-          h('button', {
-            type: 'button',
-            onClick: () => setInstallState({ status: 'idle' }),
-          }, t('cancel')),
-          h('button', {
-            type: 'button',
-            onClick: () => void finishInstall(installState.prepared),
-          }, installState.prepared.collision === 'managed'
-            ? t('confirmOverwrite')
-            : t('confirmInstall')),
         )
       : null,
     installState.status === 'installing'
-      ? h('p', { role: 'status', 'aria-live': 'polite' }, t('installing'))
+      ? h('p', { className: 'dsm-status', role: 'status', 'aria-live': 'polite' }, t('installing'))
       : null,
     installState.status === 'success'
-      ? h('p', { role: 'status' }, `${t('installed')} ${installState.skill.name}`)
+      ? h('p', { className: 'dsm-status', role: 'status' }, `${t('installed')} ${installState.skill.name}`)
       : null,
     installState.status === 'error'
-      ? h('p', { role: 'alert' }, installState.message)
+      ? h('p', { className: 'dsm-status dsm-error', role: 'alert' }, installState.message)
       : null,
-    h('h2', null, t('installedTitle')),
+    h('section', { className: 'dsm-panel', 'aria-labelledby': 'dsm-installed-title' },
+    h('h2', { id: 'dsm-installed-title' }, t('installedTitle')),
     inventoryState.status === 'loading'
-      ? h('p', { role: 'status' }, t('loadingInstalled'))
+      ? h('p', { className: 'dsm-status', role: 'status' }, t('loadingInstalled'))
       : null,
     inventoryState.status === 'error'
       ? h(
           'div',
-          null,
+          { className: 'dsm-status dsm-error' },
           h('p', { role: 'alert' }, inventoryState.message),
           h('button', {
+            className: 'dsm-button dsm-button-secondary',
             type: 'button',
             onClick: () => setInventoryVersion(version => version + 1),
           }, t('retry')),
         )
       : null,
     inventoryState.status === 'ready' && inventoryState.skills.length === 0
-      ? h('p', null, t('noInstalled'))
+      ? h('p', { className: 'dsm-empty' }, t('noInstalled'))
       : null,
     inventoryState.status === 'ready' && inventoryState.skills.length > 0
       ? h(
           'ul',
-          { 'aria-label': t('installedTitle') },
+          { className: 'dsm-list', 'aria-label': t('installedTitle') },
           ...inventoryState.skills.map(skill => h(
             'li',
             { key: skill.name },
-            h('article', null,
+            h('article', { className: 'dsm-card' },
               h('h3', null, skill.name),
-              h('p', null, skill.description),
-              h('p', null, skill.source),
-              h('p', null, t(skill.state === 'current'
+              h('p', { className: 'dsm-description' }, skill.description),
+              h('p', { className: 'dsm-meta' }, skill.source),
+              h('span', { className: 'dsm-badge', 'data-state': skill.state }, t(skill.state === 'current'
                 ? 'stateCurrent'
                 : skill.state === 'locally-modified'
                   ? 'stateModified'
                   : skill.state === 'missing'
                     ? 'stateMissing'
                     : 'stateInvalid')),
+              h('div', { className: 'dsm-actions' },
               h('a', {
+                className: 'dsm-link',
                 href: skill.pageUrl,
                 target: '_blank',
                 rel: 'noreferrer',
               }, t('openPage')),
               h('button', {
+                className: 'dsm-button dsm-button-secondary',
                 type: 'button',
-                disabled: updateState.status === 'checking'
-                  || updateState.status === 'updating',
+                disabled: operationBusy,
                 onClick: () => void checkUpdate(skill.name),
               }, t('checkUpdate')),
               h('button', {
+                className: 'dsm-button dsm-button-danger',
                 type: 'button',
-                disabled: removalState.status === 'preparing'
-                  || removalState.status === 'removing',
+                disabled: operationBusy,
                 onClick: () => void beginRemoval(skill.name),
               }, t('remove')),
+              ),
             ),
           )),
         )
       : null,
+    ),
     updateState.status === 'checking'
-      ? h('p', { role: 'status' }, `${t('checkingUpdate')} ${updateState.name}`)
+      ? h('p', { className: 'dsm-status', role: 'status' }, `${t('checkingUpdate')} ${updateState.name}`)
       : null,
     updateState.status === 'result'
-      ? h('p', { role: 'status' },
+      ? h('p', { className: 'dsm-status', role: 'status' },
           updateState.update.status === 'current'
             ? t('upToDate')
             : updateState.update.status === 'source-unavailable'
@@ -421,75 +450,60 @@ export function SkillManagerSection({
                 : t('localInvalid'))
       : null,
     updateState.status === 'confirming'
-      ? h(
-          'div',
-          {
-            role: 'dialog',
-            'aria-modal': 'true',
-            'aria-labelledby': 'dsh-skill-update-confirmation',
-          },
-          h('h3', { id: 'dsh-skill-update-confirmation' }, t('confirmUpdateTitle')),
+      ? h(ConfirmDialog, {
+          titleId: 'dsh-skill-update-confirmation',
+          title: t('confirmUpdateTitle'),
+          cancelLabel: t('cancel'),
+          confirmLabel: t('confirmUpdate'),
+          onCancel: () => setUpdateState({ status: 'idle' }),
+          onConfirm: () => void applyUpdate(updateState.update),
+        },
           h('strong', null, updateState.update.name),
           h('p', null, updateState.update.status === 'locally-modified'
             ? t('modifiedUpdatePrompt')
             : updateState.update.status === 'local-invalid'
               ? t('repairUpdatePrompt')
               : t('updatePrompt')),
-          h('button', {
-            type: 'button',
-            onClick: () => setUpdateState({ status: 'idle' }),
-          }, t('cancel')),
-          h('button', {
-            type: 'button',
-            onClick: () => void applyUpdate(updateState.update),
-          }, t('confirmUpdate')),
         )
       : null,
     updateState.status === 'updating'
-      ? h('p', { role: 'status' }, t('updating'))
+      ? h('p', { className: 'dsm-status', role: 'status' }, t('updating'))
       : null,
     updateState.status === 'success'
-      ? h('p', { role: 'status' }, `${t('updated')} ${updateState.name}`)
+      ? h('p', { className: 'dsm-status', role: 'status' }, `${t('updated')} ${updateState.name}`)
       : null,
     updateState.status === 'error'
-      ? h('p', { role: 'alert' }, updateState.message)
+      ? h('p', { className: 'dsm-status dsm-error', role: 'alert' }, updateState.message)
       : null,
     removalState.status === 'preparing'
-      ? h('p', { role: 'status' }, `${t('preparingRemoval')} ${removalState.name}`)
+      ? h('p', { className: 'dsm-status', role: 'status' }, `${t('preparingRemoval')} ${removalState.name}`)
       : null,
     removalState.status === 'confirming'
-      ? h(
-          'div',
-          {
-            role: 'dialog',
-            'aria-modal': 'true',
-            'aria-labelledby': 'dsh-skill-removal-confirmation',
-          },
-          h('h3', { id: 'dsh-skill-removal-confirmation' }, t('confirmRemovalTitle')),
+      ? h(ConfirmDialog, {
+          titleId: 'dsh-skill-removal-confirmation',
+          title: t('confirmRemovalTitle'),
+          cancelLabel: t('cancel'),
+          confirmLabel: t('confirmRemoval'),
+          danger: true,
+          onCancel: () => setRemovalState({ status: 'idle' }),
+          onConfirm: () => void finishRemoval(removalState.prepared),
+        },
           h('strong', null, removalState.prepared.name),
           h('p', null, removalState.prepared.state === 'locally-modified'
             ? t('modifiedRemovePrompt')
             : removalState.prepared.state === 'current'
               ? t('removePrompt')
               : t('invalidRemovePrompt')),
-          h('button', {
-            type: 'button',
-            onClick: () => setRemovalState({ status: 'idle' }),
-          }, t('cancel')),
-          h('button', {
-            type: 'button',
-            onClick: () => void finishRemoval(removalState.prepared),
-          }, t('confirmRemoval')),
         )
       : null,
     removalState.status === 'removing'
-      ? h('p', { role: 'status' }, t('removing'))
+      ? h('p', { className: 'dsm-status', role: 'status' }, t('removing'))
       : null,
     removalState.status === 'success'
-      ? h('p', { role: 'status' }, `${t('removed')} ${removalState.name}`)
+      ? h('p', { className: 'dsm-status', role: 'status' }, `${t('removed')} ${removalState.name}`)
       : null,
     removalState.status === 'error'
-      ? h('p', { role: 'alert' }, removalState.message)
+      ? h('p', { className: 'dsm-status dsm-error', role: 'alert' }, removalState.message)
       : null,
   )
 }

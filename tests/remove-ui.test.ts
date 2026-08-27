@@ -54,6 +54,10 @@ describe('Managed Skill removal UI', () => {
 
     fireEvent.click(screen.getByRole('button', { name: en.remove }))
     expect(await screen.findByText(en.modifiedRemovePrompt)).toBeTruthy()
+    expect((screen.getByRole('button', { name: en.checkUpdate }) as HTMLButtonElement).disabled)
+      .toBe(true)
+    expect((screen.getByRole('button', { name: en.remove }) as HTMLButtonElement).disabled)
+      .toBe(true)
     fireEvent.click(screen.getByRole('button', { name: en.cancel }))
 
     expect(confirm).not.toHaveBeenCalled()
